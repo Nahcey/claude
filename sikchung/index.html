@@ -623,12 +623,17 @@ $('modalDelete').addEventListener('click', () => {
 });
 
 // 해당 인원 설정만 초기화 (모달은 열린 상태 유지, 저장 시 반영)
+// 우선순위는 디폴트 명단의 위치 기반 값으로 복원, 커스텀 추가 인원은 0
 $('modalReset').addEventListener('click', () => {
   if (editingId == null || !editingDraft) return;
+  const p = people.find(x => x.id === editingId);
+  if (!p) return;
   if (!confirm('이 인원의 설정(제한 요일 · 주 2회 · 우선순위 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
+  const defaultIdx = DEFAULT_NAMES.indexOf(p.name);
+  const defaultPriority = defaultIdx >= 0 ? (DEFAULT_NAMES.length - defaultIdx) : 0;
   editingDraft.restricted = [false,false,false,false,false,false,false];
   editingDraft.double = false;
-  editingDraft.priority = 0;
+  editingDraft.priority = defaultPriority;
   editingDraft.rookie = false;
   // 모달 내부 UI 다시 그리기
   Array.from(modalDays.children).forEach((btn, d) => {
