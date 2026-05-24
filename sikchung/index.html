@@ -422,14 +422,14 @@ function shuffle(arr) {
 // 초기 인원 세팅
 // ============================================================
 function initPeople() {
-  // 표시 순서대로 1~N 우선순위 부여.
-  // 앞쪽 인원이 낮은 우선순위 → 슬롯 초과 시 뒤쪽 인원부터 먼저 제외됨.
+  // 표시 순서대로 N~1 우선순위 부여 (앞쪽일수록 높은 우선순위).
+  // 슬롯 초과 시 앞쪽 인원부터 먼저 제외됨.
   people = DEFAULT_NAMES.map((name, i) => ({
     id: uid(),
     name,
     restricted: [false, false, false, false, false, false, false],
     double: false,
-    priority: i + 1
+    priority: DEFAULT_NAMES.length - i
   }));
 }
 
