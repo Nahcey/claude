@@ -1,1 +1,6 @@
+plugins {
+    // Gradle이 시스템에 없는 JDK 버전을 Foojay(Adoptium 등)에서 자동 다운로드하도록 해 줌
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
 rootProject.name = 'spring-board'

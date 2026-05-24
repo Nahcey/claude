@@ -8,8 +8,10 @@ group = 'com.example'
 version = '0.0.1-SNAPSHOT'
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    toolchain {
+        // Gradle이 JDK 17을 직접 찾아 사용 (없으면 Foojay에서 자동 다운로드)
+        languageVersion = JavaLanguageVersion.of(17)
+    }
 }
 
 repositories {
