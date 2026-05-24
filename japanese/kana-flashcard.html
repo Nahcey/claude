@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>일본어 카나 플래시카드</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F5F0E8;
+  --card-bg: #FFFFFF;
+  --ink: #1A1A1A;
+  --muted: #6B6B6B;
+  --vermillion: #C0392B;
+  --navy: #2C3E6B;
+  --gold: #B8860B;
+  --border: rgba(0, 0, 0, 0.08);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: 'Noto Sans KR', sans-serif;
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  color: var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh;
+  max-width: 480px; margin: 0 auto;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+}
+
+.progress { height: 2px; background: rgba(192, 57, 43, 0.12); border-radius: 2px; overflow: hidden; margin-bottom: 14px; }
+.progress-fill { height: 100%; background: var(--vermillion); transition: width 0.35s ease; width: 0%; }
+
+.header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+.title { font-size: 13px; color: var(--muted); letter-spacing: 1px; font-weight: 500; }
+.stats { font-size: 12px; color: var(--muted); }
+
+.screen { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.screen.hidden { display: none !important; }
+
+/* Setup screen */
+.section-label { font-size: 11px; color: var(--muted); letter-spacing: 1.5px; margin: 4px 0 8px; text-transform: uppercase; }
+
+.mode-toggle { display: flex; background: rgba(0, 0, 0, 0.04); border-radius: 999px; padding: 4px; margin-bottom: 18px; }
+.mode-btn {
+  flex: 1; padding: 11px 16px; border: none; background: transparent;
+  border-radius: 999px; font-family: inherit; font-size: 14px; font-weight: 500;
+  cursor: pointer; color: var(--muted); transition: all 0.2s;
+}
+.mode-btn.active { background: var(--vermillion); color: white; box-shadow: 0 2px 6px rgba(192, 57, 43, 0.3); }
+
+.rows { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.row-btn {
+  position: relative;
+  padding: 9px 14px; border: 1px solid var(--border); background: var(--card-bg);
+  border-radius: 999px; font-family: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer; color: var(--ink); transition: all 0.15s;
+}
+.row-btn.active { background: var(--vermillion); color: white; border-color: var(--vermillion); }
+.row-btn.mastered::after {
+  content: '★'; position: absolute; top: -5px; right: -5px;
+  font-size: 9px; color: white; background: var(--gold);
+  border-radius: 50%; width: 16px; height: 16px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--bg);
+}
+
+.start-btn {
+  margin-top: auto;
+  padding: 16px; border: none; border-radius: 14px;
+  font-family: inherit; font-size: 16px; font-weight: 600;
+  background: var(--vermillion); color: white;
+  cursor: pointer; transition: transform 0.1s, opacity 0.2s;
+  box-shadow: 0 4px 12px rgba(192, 57, 43, 0.25);
+}
+.start-btn:active { transform: scale(0.98); }
+.start-btn:disabled { opacity: 0.4; box-shadow: none; cursor: not-allowed; }
+
+/* Study screen */
+.card-area {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  perspective: 1200px; min-height: 0; padding: 8px 0;
+}
+.card {
+  width: 100%; height: 100%; max-height: 420px; min-height: 220px;
+  position: relative; transform-style: preserve-3d; transition: transform 0.4s ease;
+  cursor: pointer;
+}
+.card.flipped { transform: rotateY(180deg); }
+.face {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  background: var(--card-bg); border-radius: 20px; box-shadow: var(--shadow);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.face.back { transform: rotateY(180deg); }
+.kana {
+  font-family: 'Noto Serif JP', serif;
+  font-size: clamp(120px, 38vw, 180px);
+  font-weight: 700; color: var(--ink); line-height: 1;
+}
+.korean {
+  font-family: 'Noto Sans KR', sans-serif;
+  font-size: clamp(56px, 18vw, 84px);
+  font-weight: 500; color: var(--muted);
+}
+.hint {
+  position: absolute; bottom: 18px; left: 0; right: 0;
+  text-align: center; font-size: 11px; color: var(--muted); letter-spacing: 1.5px;
+}
+
+.actions { display: flex; gap: 10px; padding-top: 14px; }
+.action-btn {
+  flex: 1; padding: 16px 8px; border: none; border-radius: 14px;
+  font-family: inherit; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: transform 0.1s, opacity 0.2s;
+}
+.action-btn:active { transform: scale(0.97); }
+.action-btn.wrong { background: var(--navy); color: white; box-shadow: 0 3px 10px rgba(44, 62, 107, 0.25); }
+.action-btn.right { background: var(--vermillion); color: white; box-shadow: 0 3px 10px rgba(192, 57, 43, 0.25); }
+.action-btn.flip {
+  background: var(--card-bg); color: var(--ink);
+  border: 1px solid var(--border); flex: 0 0 88px; box-shadow: none;
+}
+
+.toolbar { display: flex; gap: 8px; margin-top: 8px; }
+.tool-btn {
+  flex: 1; padding: 10px; border: 1px solid var(--border); background: transparent;
+  border-radius: 10px; font-family: inherit; font-size: 13px; cursor: pointer;
+  color: var(--muted);
+}
+.tool-btn:active { color: var(--ink); }
+
+/* Swipe animations */
+.card.swipe-right { animation: swipeR 0.3s forwards; }
+.card.swipe-left  { animation: swipeL 0.3s forwards; }
+@keyframes swipeR { to { transform: translateX(120%) rotate(12deg); opacity: 0; } }
+@keyframes swipeL { to { transform: translateX(-120%) rotate(-12deg); opacity: 0; } }
+
+/* Results */
+.results { align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 24px 0; }
+.results .done-label {
+  font-family: 'Noto Serif JP', serif; font-size: 22px; font-weight: 500;
+  color: var(--muted); letter-spacing: 4px; margin-bottom: 12px;
+}
+.results .accuracy {
+  font-family: 'Noto Serif JP', serif; font-size: 96px; font-weight: 700;
+  color: var(--vermillion); line-height: 1;
+}
+.results .accuracy-label { color: var(--muted); font-size: 12px; letter-spacing: 2px; margin-top: -4px; }
+.results .detail { color: var(--muted); font-size: 14px; margin-top: 14px; }
+.results .actions-col { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 280px; margin-top: 28px; }
+.restart-btn {
+  padding: 14px; background: var(--vermillion); color: white;
+  border: none; border-radius: 12px; font-family: inherit; font-size: 15px; font-weight: 600;
+  cursor: pointer; box-shadow: 0 4px 12px rgba(192, 57, 43, 0.25);
+}
+.back-btn {
+  padding: 12px; background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 12px;
+  font-family: inherit; font-size: 14px; cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
+
+  <div class="header">
+    <div class="title">일본어 카나 플래시카드</div>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <!-- Setup -->
+  <div id="setup" class="screen">
+    <div class="section-label">문자</div>
+    <div class="mode-toggle" id="modeToggle">
+      <button class="mode-btn active" data-mode="hira">히라가나</button>
+      <button class="mode-btn" data-mode="kata">가타카나</button>
+    </div>
+    <div class="section-label">학습 범위</div>
+    <div class="rows" id="rows"></div>
+    <button class="start-btn" id="startBtn">학습 시작</button>
+  </div>
+
+  <!-- Study -->
+  <div id="study" class="screen hidden">
+    <div class="card-area">
+      <div class="card" id="card">
+        <div class="face front">
+          <div class="kana" id="kanaText">あ</div>
+          <div class="hint">탭하여 뒤집기</div>
+        </div>
+        <div class="face back">
+          <div class="korean" id="koreanText">아</div>
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="action-btn wrong" id="wrongBtn">✗ 틀림</button>
+      <button class="action-btn flip" id="flipBtn">뒤집기</button>
+      <button class="action-btn right" id="rightBtn">✓ 맞음</button>
+    </div>
+    <div class="toolbar">
+      <button class="tool-btn" id="shuffleBtn">섞기</button>
+      <button class="tool-btn" id="quitBtn">종료</button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results" class="screen hidden results">
+    <div class="done-label">학습 완료</div>
+    <div class="accuracy" id="resultsAccuracy">0%</div>
+    <div class="accuracy-label">정답률</div>
+    <div class="detail" id="resultsDetail"></div>
+    <div class="actions-col">
+      <button class="restart-btn" id="restartBtn">다시하기</button>
+      <button class="back-btn" id="backBtn">처음으로</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 일본어 카나 데이터 (가나 → 한국어 발음)
+// ============================================================
+const HIRAGANA = {
+  '모음': [['あ','아'],['い','이'],['う','우'],['え','에'],['お','오']],
+  'か행': [['か','카'],['き','키'],['く','쿠'],['け','케'],['こ','코']],
+  'さ행': [['さ','사'],['し','시'],['す','스'],['せ','세'],['そ','소']],
+  'た행': [['た','타'],['ち','치'],['つ','츠'],['て','테'],['と','토']],
+  'な행': [['な','나'],['に','니'],['ぬ','누'],['ね','네'],['の','노']],
+  'は행': [['は','하'],['ひ','히'],['ふ','후'],['へ','헤'],['ほ','호']],
+  'ま행': [['ま','마'],['み','미'],['む','무'],['め','메'],['も','모']],
+  'や행': [['や','야'],['ゆ','유'],['よ','요']],
+  'ら행': [['ら','라'],['り','리'],['る','루'],['れ','레'],['ろ','로']],
+  'わ행': [['わ','와'],['を','오']],
+  'ん':   [['ん','응']]
+};
+const KATAKANA = {
+  '모음': [['ア','아'],['イ','이'],['ウ','우'],['エ','에'],['オ','오']],
+  'か행': [['カ','카'],['キ','키'],['ク','쿠'],['ケ','케'],['コ','코']],
+  'さ행': [['サ','사'],['シ','시'],['ス','스'],['セ','세'],['ソ','소']],
+  'た행': [['タ','타'],['チ','치'],['ツ','츠'],['テ','테'],['ト','토']],
+  'な행': [['ナ','나'],['ニ','니'],['ヌ','누'],['ネ','네'],['ノ','노']],
+  'は행': [['ハ','하'],['ヒ','히'],['フ','후'],['ヘ','헤'],['ホ','호']],
+  'ま행': [['マ','마'],['ミ','미'],['ム','무'],['メ','메'],['モ','모']],
+  'や행': [['ヤ','야'],['ユ','유'],['ヨ','요']],
+  'ら행': [['ラ','라'],['リ','리'],['ル','루'],['レ','레'],['ロ','로']],
+  'わ행': [['ワ','와'],['ヲ','오']],
+  'ん':   [['ン','응']]
+};
+const ROW_ORDER = ['모음','か행','さ행','た행','な행','は행','ま행','や행','ら행','わ행','ん'];
+
+// ============================================================
+// 상태 + localStorage
+// ============================================================
+const STORAGE_KEY = 'kana-flashcard-stats-v1';
+
+const state = {
+  mode: 'hira',
+  selectedRow: '모음',
+  deck: [],
+  current: 0,
+  flipped: false,
+  sessionCorrect: 0,
+  sessionWrong: 0,
+  sessionTotal: 0
+};
+
+function loadStats() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function saveStats(s) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch (e) {}
+}
+function getCardStats(ja) {
+  return loadStats()[ja] || { correct: 0, wrong: 0 };
+}
+function recordResult(ja, correct) {
+  const s = loadStats();
+  if (!s[ja]) s[ja] = { correct: 0, wrong: 0 };
+  if (correct) s[ja].correct++; else s[ja].wrong++;
+  saveStats(s);
+}
+
+function charsFor(mode) { return mode === 'hira' ? HIRAGANA : KATAKANA; }
+
+function rowMastered(mode, row) {
+  const chars = charsFor(mode)[row];
+  if (!chars) return false;
+  let correct = 0, total = 0, touched = 0;
+  for (const [ja] of chars) {
+    const s = getCardStats(ja);
+    const n = s.correct + s.wrong;
+    correct += s.correct; total += n;
+    if (n > 0) touched++;
+  }
+  if (touched < chars.length) return false;
+  return total > 0 && correct / total >= 0.8;
+}
+
+function buildDeck(mode, selection) {
+  const cs = charsFor(mode);
+  if (selection === '전체') {
+    const all = [];
+    for (const r of ROW_ORDER) all.push(...cs[r]);
+    return all;
+  }
+  if (selection === '약점') {
+    const weak = [];
+    for (const r of ROW_ORDER) {
+      for (const c of cs[r]) {
+        if (getCardStats(c[0]).wrong >= 2) weak.push(c);
+      }
+    }
+    return weak;
+  }
+  return [...(cs[selection] || [])];
+}
+
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// ============================================================
+// DOM 헬퍼
+// ============================================================
+const $ = (id) => document.getElementById(id);
+const setupEl   = $('setup');
+const studyEl   = $('study');
+const resultsEl = $('results');
+const rowsEl    = $('rows');
+const cardEl    = $('card');
+const kanaEl    = $('kanaText');
+const koreanEl  = $('koreanText');
+const statsEl   = $('stats');
+const progressEl = $('progressFill');
+
+function show(screen) {
+  for (const s of [setupEl, studyEl, resultsEl]) s.classList.add('hidden');
+  screen.classList.remove('hidden');
+}
+
+// ============================================================
+// Setup 화면
+// ============================================================
+function renderRows() {
+  rowsEl.innerHTML = '';
+  const items = [...ROW_ORDER, '전체', '약점'];
+  for (const r of items) {
+    const btn = document.createElement('button');
+    btn.className = 'row-btn' + (r === state.selectedRow ? ' active' : '');
+    btn.textContent = r === '약점' ? '약점 카드' : r;
+    btn.dataset.row = r;
+    if (r !== '전체' && r !== '약점' && rowMastered(state.mode, r)) {
+      btn.classList.add('mastered');
+    }
+    btn.addEventListener('click', () => {
+      state.selectedRow = r;
+      renderRows();
+    });
+    rowsEl.appendChild(btn);
+  }
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  document.querySelectorAll('.mode-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  renderRows();
+}
+
+$('modeToggle').addEventListener('click', (e) => {
+  const m = e.target.dataset.mode;
+  if (m) setMode(m);
+});
+
+$('startBtn').addEventListener('click', startStudy);
+
+// ============================================================
+// Study 화면
+// ============================================================
+function startStudy() {
+  const deck = buildDeck(state.mode, state.selectedRow);
+  if (deck.length === 0) {
+    alert(state.selectedRow === '약점'
+      ? '약점 카드가 없습니다. 학습을 더 진행해 주세요.'
+      : '선택한 범위에 카드가 없습니다.');
+    return;
+  }
+  shuffleInPlace(deck);
+  state.deck = deck;
+  state.current = 0;
+  state.flipped = false;
+  state.sessionCorrect = 0;
+  state.sessionWrong = 0;
+  state.sessionTotal = deck.length;
+  show(studyEl);
+  renderCard();
+}
+
+function renderCard() {
+  if (state.current >= state.deck.length) { showResults(); return; }
+  const [ja, ko] = state.deck[state.current];
+  kanaEl.textContent = ja;
+  koreanEl.textContent = ko;
+  state.flipped = false;
+  cardEl.classList.remove('flipped', 'swipe-left', 'swipe-right');
+  cardEl.style.opacity = '';
+  cardEl.style.transform = '';
+  const remaining = state.deck.length - state.current;
+  statsEl.textContent = `맞음 ${state.sessionCorrect} / ${state.sessionTotal} · 남은 ${remaining}`;
+  const pct = state.sessionTotal ? (state.sessionCorrect / state.sessionTotal) * 100 : 0;
+  progressEl.style.width = pct + '%';
+}
+
+function flipCard() {
+  state.flipped = !state.flipped;
+  cardEl.classList.toggle('flipped', state.flipped);
+}
+
+function answer(correct) {
+  if (state.current >= state.deck.length) return;
+  const card = state.deck[state.current];
+  recordResult(card[0], correct);
+  cardEl.classList.add(correct ? 'swipe-right' : 'swipe-left');
+  if (correct) {
+    state.sessionCorrect++;
+  } else {
+    state.sessionWrong++;
+    state.deck.push(card);
+  }
+  setTimeout(() => {
+    state.current++;
+    renderCard();
+  }, 280);
+}
+
+// 카드 클릭 = flip, 단 스와이프와 충돌 방지
+let touchStartX = 0, touchStartY = 0, touchActive = false, didSwipe = false;
+cardEl.addEventListener('touchstart', (e) => {
+  const t = e.touches[0];
+  touchStartX = t.clientX; touchStartY = t.clientY;
+  touchActive = true; didSwipe = false;
+}, { passive: true });
+
+cardEl.addEventListener('touchmove', (e) => {
+  if (!touchActive) return;
+  const t = e.touches[0];
+  if (Math.abs(t.clientX - touchStartX) > 24) didSwipe = true;
+}, { passive: true });
+
+cardEl.addEventListener('touchend', (e) => {
+  if (!touchActive) return;
+  touchActive = false;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX, dy = t.clientY - touchStartY;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+    answer(dx > 0);
+  }
+}, { passive: true });
+
+cardEl.addEventListener('click', () => {
+  if (didSwipe) { didSwipe = false; return; }
+  flipCard();
+});
+
+$('flipBtn').addEventListener('click', flipCard);
+$('rightBtn').addEventListener('click', () => answer(true));
+$('wrongBtn').addEventListener('click', () => answer(false));
+
+document.addEventListener('keydown', (e) => {
+  if (!studyEl.classList.contains('hidden')) {
+    if (e.key === ' ') { e.preventDefault(); flipCard(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); answer(true); }
+    else if (e.key === 'ArrowLeft')  { e.preventDefault(); answer(false); }
+  }
+});
+
+$('shuffleBtn').addEventListener('click', () => {
+  const remaining = state.deck.slice(state.current);
+  shuffleInPlace(remaining);
+  state.deck = state.deck.slice(0, state.current).concat(remaining);
+  renderCard();
+});
+
+$('quitBtn').addEventListener('click', () => {
+  progressEl.style.width = '0%';
+  statsEl.textContent = '';
+  show(setupEl);
+  renderRows();
+});
+
+// ============================================================
+// Results 화면
+// ============================================================
+function showResults() {
+  show(resultsEl);
+  const total = state.sessionCorrect + state.sessionWrong;
+  const acc = total ? Math.round((state.sessionCorrect / total) * 100) : 0;
+  $('resultsAccuracy').textContent = acc + '%';
+  $('resultsDetail').textContent =
+    `맞음 ${state.sessionCorrect}  ·  틀림 ${state.sessionWrong}  ·  총 시도 ${total}`;
+  progressEl.style.width = '100%';
+}
+
+$('restartBtn').addEventListener('click', startStudy);
+$('backBtn').addEventListener('click', () => {
+  progressEl.style.width = '0%';
+  statsEl.textContent = '';
+  show(setupEl);
+  renderRows();
+});
+
+// ============================================================
+// 초기 렌더
+// ============================================================
+setMode('hira');
+renderRows();
+</script>
+</body>
+</html>
