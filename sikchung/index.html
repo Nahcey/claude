@@ -145,7 +145,7 @@ table.schedule tr.partial td:not(.day-label) { background: #FEF9C3; }
 table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
 .person-chip {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; background: #EFF6FF; color: var(--primary-dark);
+  padding: 4px 10px; background: #F3F4F6; color: var(--ink);
   border-radius: 999px; font-size: 13px; font-weight: 500;
   margin: 2px;
 }
@@ -920,12 +920,6 @@ function renderResult(r) {
           const b = document.createElement('span');
           b.className = 'badge-2x';
           b.textContent = '2회';
-          chip.appendChild(b);
-        }
-        if (p.priority > 0) {
-          const b = document.createElement('span');
-          b.className = 'badge-priority';
-          b.textContent = `우선순위 ${p.priority}`;
           chip.appendChild(b);
         }
         td.appendChild(chip);
