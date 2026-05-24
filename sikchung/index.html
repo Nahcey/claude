@@ -463,12 +463,7 @@ function renderPeople() {
       b.textContent = '2회';
       meta.appendChild(b);
     }
-    if (p.priority > 0) {
-      const b = document.createElement('span');
-      b.className = 'pc-mini pri';
-      b.textContent = `P${p.priority}`;
-      meta.appendChild(b);
-    }
+    // 우선순위 P 라벨은 카드에 노출하지 않음 (모달에서만 편집)
     const resCount = p.restricted.filter(Boolean).length;
     if (resCount > 0) {
       const b = document.createElement('span');
