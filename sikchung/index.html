@@ -145,10 +145,13 @@ table.schedule tr.partial td:not(.day-label) { background: #FEF9C3; }
 table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
 .person-chip {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; background: #EFF6FF; color: var(--primary-dark);
+  padding: 4px 10px; background: #F1F5F9; color: #475569;
   border-radius: 999px; font-size: 13px; font-weight: 500;
   margin: 2px;
 }
+.person-chip.group-A { background: #DBEAFE; color: #1E40AF; }
+.person-chip.group-B { background: #D1FAE5; color: #065F46; }
+.person-chip.group-C { background: #FCE7F3; color: #9D174D; }
 .badge-2x {
   display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 700;
   background: var(--accent); color: white; border-radius: 4px;
@@ -416,6 +419,12 @@ const DEFAULT_NAMES = [
   '권정훈','정한결','김최원','오승호','박예찬',
   '권기범','최정협','전유찬'
 ];
+// 같은 그룹 인원을 가능한 한 같은 요일에 묶는 데 사용 (소프트 선호)
+const DEFAULT_GROUPS = {
+  '이동민':'A','김기환':'A','정우진':'A',
+  '윤민형':'B','한우현':'B','권정훈':'B','정한결':'B','김최원':'B',
+  '오승호':'C','박예찬':'C','권기범':'C','최정협':'C','전유찬':'C'
+};
 
 let people = []; // {id, name, restricted: bool[7], double: bool, priority: number}
 let nextId = 1;
@@ -442,7 +451,8 @@ function initPeople() {
     name,
     restricted: [false, false, false, false, false, false, false],
     double: false,
-    priority: DEFAULT_NAMES.length - i
+    priority: DEFAULT_NAMES.length - i,
+    group: DEFAULT_GROUPS[name] || null
   }));
 }
 
@@ -648,7 +658,8 @@ $('addBtn').addEventListener('click', () => {
     name,
     restricted: [false,false,false,false,false,false,false],
     double: false,
-    priority: 0
+    priority: 0,
+    group: DEFAULT_GROUPS[name] || null
   });
   input.value = '';
   renderPeople();
@@ -705,8 +716,8 @@ function emptySchedule() {
   return Array.from({ length: 7 }, () => [null, null]);
 }
 
+// 같은 그룹 쌍을 우선적으로 시도하도록 정렬 + 백트래킹
 function solveBacktrack(active, timeBudgetMs = 600) {
-  // 각 사람 최대 배정 가능 횟수
   const maxAssign = p => p.double ? 2 : 1;
   const schedule = emptySchedule();
   const counts = new Map(active.map(p => [p.id, 0]));
@@ -723,7 +734,6 @@ function solveBacktrack(active, timeBudgetMs = 600) {
   function recurse(idx) {
     if (Date.now() - start > timeBudgetMs) return 'TIMEOUT';
     if (idx === dayOrder.length) {
-      // 모든 사람 최소 1회 배정 됐는지 검사
       for (const p of active) if (counts.get(p.id) < 1) return false;
       return true;
     }
@@ -733,22 +743,31 @@ function solveBacktrack(active, timeBudgetMs = 600) {
     ));
     if (available.length < SLOTS_PER_DAY) return false;
 
-    // 2명 조합 시도
+    // 가능한 모든 (a, b) 쌍을 만들고 같은 그룹 쌍을 먼저 시도
+    const pairs = [];
     for (let i = 0; i < available.length; i++) {
       for (let j = i + 1; j < available.length; j++) {
-        const a = available[i], b = available[j];
-        schedule[day] = [a, b];
-        counts.set(a.id, counts.get(a.id) + 1);
-        counts.set(b.id, counts.get(b.id) + 1);
-
-        const r = recurse(idx + 1);
-        if (r === true) return true;
-        if (r === 'TIMEOUT') return 'TIMEOUT';
-
-        counts.set(a.id, counts.get(a.id) - 1);
-        counts.set(b.id, counts.get(b.id) - 1);
-        schedule[day] = [null, null];
+        pairs.push([available[i], available[j]]);
       }
+    }
+    pairs.sort((p1, p2) => {
+      const sameA = p1[0].group && p1[0].group === p1[1].group ? 0 : 1;
+      const sameB = p2[0].group && p2[0].group === p2[1].group ? 0 : 1;
+      return sameA - sameB; // 같은 그룹(0) 이 먼저
+    });
+
+    for (const [a, b] of pairs) {
+      schedule[day] = [a, b];
+      counts.set(a.id, counts.get(a.id) + 1);
+      counts.set(b.id, counts.get(b.id) + 1);
+
+      const r = recurse(idx + 1);
+      if (r === true) return true;
+      if (r === 'TIMEOUT') return 'TIMEOUT';
+
+      counts.set(a.id, counts.get(a.id) - 1);
+      counts.set(b.id, counts.get(b.id) - 1);
+      schedule[day] = [null, null];
     }
     return false;
   }
@@ -756,6 +775,17 @@ function solveBacktrack(active, timeBudgetMs = 600) {
   const ok = recurse(0);
   if (ok === true) return { schedule, complete: true };
   return null;
+}
+
+// 같은 그룹끼리 묶인 요일 수 (높을수록 좋음)
+function cohesionScore(schedule) {
+  let score = 0;
+  for (const day of schedule) {
+    if (day[0] && day[1] && day[0].group && day[0].group === day[1].group) {
+      score++;
+    }
+  }
+  return score;
 }
 
 function solveGreedy(active) {
@@ -808,8 +838,20 @@ function generate() {
   // 1단계: 우선순위 스킵
   const { active, skipped } = applySkipPriority(people);
 
-  // 2단계: 백트래킹 — 못 풀면 그리디
-  let res = solveBacktrack(active);
+  // 2단계: 백트래킹을 여러 번 시도해서 그룹 응집도가 가장 높은 결과 채택
+  let res = null;
+  let bestScore = -1;
+  const attempts = 6;
+  const budgetPer = 350;
+  for (let t = 0; t < attempts; t++) {
+    const r = solveBacktrack(active, budgetPer);
+    if (r && r.complete) {
+      const sc = cohesionScore(r.schedule);
+      if (sc > bestScore) { bestScore = sc; res = r; }
+      // 모든 요일이 동일 그룹이면 즉시 채택 (이미 최적)
+      if (sc === 7) break;
+    }
+  }
   let failed = [];
 
   if (!res) {
@@ -875,7 +917,7 @@ function renderResult(r) {
       const p = slot[s];
       if (p) {
         const chip = document.createElement('span');
-        chip.className = 'person-chip';
+        chip.className = 'person-chip' + (p.group ? ' group-' + p.group : '');
         chip.textContent = p.name;
         if (r.assignCount.get(p.id) === 2) {
           const b = document.createElement('span');
@@ -912,6 +954,7 @@ function renderResult(r) {
   }
   stat('완전 배정된 요일', `${r.fullDays} / 7`, r.fullDays === 7 ? 'ok' : (r.fullDays >= 4 ? '' : 'warn'));
   stat('미배정 슬롯', `${r.emptySlots}개`, r.emptySlots === 0 ? 'ok' : 'warn');
+  stat('같은 그룹 매칭', `${cohesionScore(r.schedule)} / 7일`, cohesionScore(r.schedule) >= 5 ? 'ok' : '');
   stat('배정된 인원', `${r.assignCount.size}명`);
   stat('이번 주 제외', `${r.skipped.length}명`);
 
