@@ -274,6 +274,17 @@ const KATAKANA = {
 };
 const ROW_ORDER = ['あ행','か행','さ행','た행','な행','は행','ま행','や행','ら행','わ행','ん','が행','ざ행','だ행','ば행','ぱ행'];
 
+// 모드별 행 라벨: 키는 ROW_ORDER 값(히라가나 표기), 값은 가타카나 표기
+const KATAKANA_ROW_LABEL = {
+  'あ행':'ア행','か행':'カ행','さ행':'サ행','た행':'タ행','な행':'ナ행',
+  'は행':'ハ행','ま행':'マ행','や행':'ヤ행','ら행':'ラ행','わ행':'ワ행','ん':'ン',
+  'が행':'ガ행','ざ행':'ザ행','だ행':'ダ행','ば행':'バ행','ぱ행':'パ행'
+};
+function rowLabel(r, mode) {
+  if (r === '전체' || r === '약점') return r === '약점' ? '약점 카드' : r;
+  return mode === 'kata' ? (KATAKANA_ROW_LABEL[r] || r) : r;
+}
+
 // ============================================================
 // 상태 + localStorage
 // ============================================================
@@ -378,7 +389,7 @@ function renderRows() {
   for (const r of items) {
     const btn = document.createElement('button');
     btn.className = 'row-btn' + (r === state.selectedRow ? ' active' : '');
-    btn.textContent = r === '약점' ? '약점 카드' : r;
+    btn.textContent = rowLabel(r, state.mode);
     btn.dataset.row = r;
     if (r !== '전체' && r !== '약점' && rowMastered(state.mode, r)) {
       btn.classList.add('mastered');
