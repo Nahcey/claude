@@ -145,13 +145,10 @@ table.schedule tr.partial td:not(.day-label) { background: #FEF9C3; }
 table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
 .person-chip {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; background: #F1F5F9; color: #475569;
+  padding: 4px 10px; background: #EFF6FF; color: var(--primary-dark);
   border-radius: 999px; font-size: 13px; font-weight: 500;
   margin: 2px;
 }
-.person-chip.group-A { background: #DBEAFE; color: #1E40AF; }
-.person-chip.group-B { background: #D1FAE5; color: #065F46; }
-.person-chip.group-C { background: #FCE7F3; color: #9D174D; }
 .badge-2x {
   display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 700;
   background: var(--accent); color: white; border-radius: 4px;
@@ -917,7 +914,7 @@ function renderResult(r) {
       const p = slot[s];
       if (p) {
         const chip = document.createElement('span');
-        chip.className = 'person-chip' + (p.group ? ' group-' + p.group : '');
+        chip.className = 'person-chip';
         chip.textContent = p.name;
         if (r.assignCount.get(p.id) === 2) {
           const b = document.createElement('span');
@@ -954,7 +951,6 @@ function renderResult(r) {
   }
   stat('완전 배정된 요일', `${r.fullDays} / 7`, r.fullDays === 7 ? 'ok' : (r.fullDays >= 4 ? '' : 'warn'));
   stat('미배정 슬롯', `${r.emptySlots}개`, r.emptySlots === 0 ? 'ok' : 'warn');
-  stat('같은 그룹 매칭', `${cohesionScore(r.schedule)} / 7일`, cohesionScore(r.schedule) >= 5 ? 'ok' : '');
   stat('배정된 인원', `${r.assignCount.size}명`);
   stat('이번 주 제외', `${r.skipped.length}명`);
 
