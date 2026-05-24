@@ -195,7 +195,6 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
 }
 .person-card:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(37,99,235,0.08); }
 .person-card:active { transform: scale(0.97); }
-.person-card.has-priority { background: var(--skip-tint); border-color: #FDE68A; }
 .person-card .pc-name { font-weight: 600; font-size: 14px; color: var(--ink); }
 .person-card .pc-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; min-height: 16px; }
 .pc-mini {
@@ -447,7 +446,7 @@ function renderPeople() {
   for (const p of people) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'person-card' + (p.priority > 0 ? ' has-priority' : '');
+    card.className = 'person-card';
     card.addEventListener('click', () => openEditor(p.id));
 
     const name = document.createElement('div');
