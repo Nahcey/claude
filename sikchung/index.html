@@ -213,6 +213,7 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
 .pc-mini.dbl { background: #FFEDD5; color: #9A3412; }
 .pc-mini.pri { background: #FEF3C7; color: #92400E; }
 .pc-mini.res { background: #E0E7FF; color: #3730A3; }
+.pc-mini.rkk { background: #DBEAFE; color: #1E40AF; }
 
 /* Modal */
 .modal-overlay {
@@ -346,12 +347,19 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
         </div>
         <div class="field">
           <label class="field-label">배정 옵션</label>
-          <div class="inline-toggle" id="modalDoubleRow">
+          <div class="inline-toggle" id="modalDoubleRow" style="margin-bottom:8px;">
             <div>
               <div class="label-text">주 2회 배정 가능</div>
               <div class="label-sub">한 주에 두 번까지 다른 요일에 배정될 수 있음</div>
             </div>
             <div class="switch" id="modalDouble"></div>
+          </div>
+          <div class="inline-toggle" id="modalRookieRow">
+            <div>
+              <div class="label-text">신병</div>
+              <div class="label-sub">최우선으로 그룹 A·B 인원과 같은 요일에 배정 (불가 시 C와 배정)</div>
+            </div>
+            <div class="switch" id="modalRookie"></div>
           </div>
         </div>
         <div class="field">
@@ -449,7 +457,8 @@ function initPeople() {
     restricted: [false, false, false, false, false, false, false],
     double: false,
     priority: DEFAULT_NAMES.length - i,
-    group: DEFAULT_GROUPS[name] || null
+    group: DEFAULT_GROUPS[name] || null,
+    rookie: false
   }));
 }
 
@@ -477,6 +486,12 @@ function renderPeople() {
 
     const meta = document.createElement('div');
     meta.className = 'pc-meta';
+    if (p.rookie) {
+      const b = document.createElement('span');
+      b.className = 'pc-mini rkk';
+      b.textContent = '신병';
+      meta.appendChild(b);
+    }
     if (p.double) {
       const b = document.createElement('span');
       b.className = 'pc-mini dbl';
@@ -505,10 +520,11 @@ function renderPeople() {
 const modalOverlay = $('modalOverlay');
 const modalDays    = $('modalDays');
 const modalDouble  = $('modalDouble');
+const modalRookie  = $('modalRookie');
 const modalPriority = $('modalPriority');
 const modalNameEl  = $('modalName');
 let editingId = null;
-let editingDraft = null; // {restricted, double, priority}
+let editingDraft = null; // {restricted, double, priority, rookie}
 
 function openEditor(personId) {
   const p = people.find(x => x.id === personId);
@@ -518,7 +534,8 @@ function openEditor(personId) {
   editingDraft = {
     restricted: p.restricted.slice(),
     double: p.double,
-    priority: p.priority
+    priority: p.priority,
+    rookie: !!p.rookie
   };
   modalNameEl.textContent = p.name;
 
@@ -538,6 +555,8 @@ function openEditor(personId) {
 
   // 주 2회 스위치
   modalDouble.classList.toggle('on', editingDraft.double);
+  // 신병 스위치
+  modalRookie.classList.toggle('on', editingDraft.rookie);
 
   // 우선순위
   modalPriority.value = editingDraft.priority;
@@ -557,6 +576,12 @@ $('modalDoubleRow').addEventListener('click', () => {
   editingDraft.double = !editingDraft.double;
   modalDouble.classList.toggle('on', editingDraft.double);
 });
+// 신병 토글
+$('modalRookieRow').addEventListener('click', () => {
+  if (!editingDraft) return;
+  editingDraft.rookie = !editingDraft.rookie;
+  modalRookie.classList.toggle('on', editingDraft.rookie);
+});
 
 // 우선순위 입력
 modalPriority.addEventListener('input', () => {
@@ -575,6 +600,7 @@ $('modalSave').addEventListener('click', () => {
     p.restricted = editingDraft.restricted.slice();
     p.double = editingDraft.double;
     p.priority = editingDraft.priority;
+    p.rookie = editingDraft.rookie;
   }
   closeEditor();
   renderPeople();
@@ -656,7 +682,8 @@ $('addBtn').addEventListener('click', () => {
     restricted: [false,false,false,false,false,false,false],
     double: false,
     priority: 0,
-    group: DEFAULT_GROUPS[name] || null
+    group: DEFAULT_GROUPS[name] || null,
+    rookie: false
   });
   input.value = '';
   renderPeople();
@@ -713,6 +740,38 @@ function emptySchedule() {
   return Array.from({ length: 7 }, () => [null, null]);
 }
 
+// 쌍 (a,b)의 선호도 점수. 높을수록 우선.
+//   1. 신병 + A/B 파트너          → 100  (최우선)
+//   2. 같은 그룹 쌍                →  10
+//   3. 신병 + C 파트너            →   1  (불가피한 fallback)
+//   4. 그 외                        →   0
+function pairPreference(a, b) {
+  const aIsRookie = !!a.rookie, bIsRookie = !!b.rookie;
+  if (aIsRookie || bIsRookie) {
+    const rookie  = aIsRookie ? a : b;
+    const partner = aIsRookie ? b : a;
+    // 신병끼리 묶이는 경우: 두 사람 모두 A/B여야 최우선, 아니면 일반 fallback
+    if (aIsRookie && bIsRookie) {
+      const okA = (a.group === 'A' || a.group === 'B') && (b.group === 'A' || b.group === 'B');
+      return okA ? 100 : 1;
+    }
+    if (partner.group === 'A' || partner.group === 'B') return 100;
+    if (partner.group === 'C') return 1;
+    return 1; // 그룹 미지정 파트너 — fallback
+  }
+  if (a.group && a.group === b.group) return 10;
+  return 0;
+}
+
+// 일정 전체 선호도 합산 (다중 시도 중 최고점 선택용)
+function totalPreference(schedule) {
+  let s = 0;
+  for (const day of schedule) {
+    if (day[0] && day[1]) s += pairPreference(day[0], day[1]);
+  }
+  return s;
+}
+
 // 같은 그룹 쌍을 우선적으로 시도하도록 정렬 + 백트래킹
 function solveBacktrack(active, timeBudgetMs = 600) {
   const maxAssign = p => p.double ? 2 : 1;
@@ -747,11 +806,8 @@ function solveBacktrack(active, timeBudgetMs = 600) {
         pairs.push([available[i], available[j]]);
       }
     }
-    pairs.sort((p1, p2) => {
-      const sameA = p1[0].group && p1[0].group === p1[1].group ? 0 : 1;
-      const sameB = p2[0].group && p2[0].group === p2[1].group ? 0 : 1;
-      return sameA - sameB; // 같은 그룹(0) 이 먼저
-    });
+    // 선호도 내림차순 — 신병+A/B → 같은 그룹 → 신병+C → 그 외
+    pairs.sort((p1, p2) => pairPreference(p2[0], p2[1]) - pairPreference(p1[0], p1[1]));
 
     for (const [a, b] of pairs) {
       schedule[day] = [a, b];
@@ -774,16 +830,6 @@ function solveBacktrack(active, timeBudgetMs = 600) {
   return null;
 }
 
-// 같은 그룹끼리 묶인 요일 수 (높을수록 좋음)
-function cohesionScore(schedule) {
-  let score = 0;
-  for (const day of schedule) {
-    if (day[0] && day[1] && day[0].group && day[0].group === day[1].group) {
-      score++;
-    }
-  }
-  return score;
-}
 
 function solveGreedy(active) {
   // 백트래킹 실패 시: 가능한 만큼 채우고 미배정 슬롯/실패 인원 보고
@@ -843,10 +889,8 @@ function generate() {
   for (let t = 0; t < attempts; t++) {
     const r = solveBacktrack(active, budgetPer);
     if (r && r.complete) {
-      const sc = cohesionScore(r.schedule);
+      const sc = totalPreference(r.schedule);
       if (sc > bestScore) { bestScore = sc; res = r; }
-      // 모든 요일이 동일 그룹이면 즉시 채택 (이미 최적)
-      if (sc === 7) break;
     }
   }
   let failed = [];
