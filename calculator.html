@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>간단한 계산기</title>
+<style>
+  body {
+    font-family: sans-serif;
+    background: #1e1e2e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+  }
+  .calculator {
+    background: #2a2a3d;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    width: 280px;
+  }
+  #display {
+    width: 100%;
+    height: 60px;
+    font-size: 28px;
+    text-align: right;
+    padding: 0 12px;
+    border: none;
+    border-radius: 8px;
+    background: #11111a;
+    color: #fff;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+  }
+  .buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  button {
+    height: 56px;
+    font-size: 20px;
+    border: none;
+    border-radius: 8px;
+    background: #3a3a52;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: #4a4a66; }
+  button.op { background: #e98a3b; }
+  button.op:hover { background: #f29a4d; }
+  button.eq { background: #4caf50; grid-column: span 2; }
+  button.eq:hover { background: #5dc063; }
+  button.clear { background: #d9534f; }
+  button.clear:hover { background: #e26561; }
+</style>
+</head>
+<body>
+  <div class="calculator">
+    <input id="display" type="text" readonly value="0">
+    <div class="buttons">
+      <button class="clear" onclick="clearDisplay()">C</button>
+      <button onclick="backspace()">←</button>
+      <button class="op" onclick="append('%')">%</button>
+      <button class="op" onclick="append('/')">÷</button>
+
+      <button onclick="append('7')">7</button>
+      <button onclick="append('8')">8</button>
+      <button onclick="append('9')">9</button>
+      <button class="op" onclick="append('*')">×</button>
+
+      <button onclick="append('4')">4</button>
+      <button onclick="append('5')">5</button>
+      <button onclick="append('6')">6</button>
+      <button class="op" onclick="append('-')">−</button>
+
+      <button onclick="append('1')">1</button>
+      <button onclick="append('2')">2</button>
+      <button onclick="append('3')">3</button>
+      <button class="op" onclick="append('+')">+</button>
+
+      <button onclick="append('0')">0</button>
+      <button onclick="append('.')">.</button>
+      <button class="eq" onclick="calculate()">=</button>
+    </div>
+  </div>
+
+<script>
+  const display = document.getElementById('display');
+  let resetNext = false;
+
+  function append(val) {
+    if (display.value === '0' || resetNext) {
+      display.value = '';
+      resetNext = false;
+    }
+    display.value += val;
+  }
+
+  function clearDisplay() {
+    display.value = '0';
+    resetNext = false;
+  }
+
+  function backspace() {
+    display.value = display.value.slice(0, -1) || '0';
+  }
+
+  function calculate() {
+    try {
+      const expr = display.value.replace(/[^0-9+\-*/%.]/g, '');
+      const result = Function('"use strict";return (' + expr + ')')();
+      display.value = (Math.round(result * 1e10) / 1e10).toString();
+    } catch (e) {
+      display.value = 'Error';
+    }
+    resetNext = true;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (/[0-9+\-*/.%]/.test(e.key)) append(e.key);
+    else if (e.key === 'Enter' || e.key === '=') calculate();
+    else if (e.key === 'Backspace') backspace();
+    else if (e.key === 'Escape') clearDisplay();
+  });
+</script>
+</body>
+</html>
