@@ -40,14 +40,9 @@ h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
 }
 .updated {
   font-size: 12px; color: var(--muted); white-space: nowrap;
-  padding-top: 4px; line-height: 1.4;
+  padding-top: 6px; font-weight: 500;
 }
-.updated .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; opacity: 0.7; }
-.updated .date { font-weight: 600; color: var(--ink); }
-@media (max-width: 420px) {
-  .updated { font-size: 11px; }
-  .updated .label { display: none; }
-}
+@media (max-width: 420px) { .updated { font-size: 11px; } }
 
 .card {
   background: var(--card);
@@ -313,10 +308,7 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
       <h1>식당 청소 일정 생성기</h1>
       <p class="subtitle">월~일 7일간, 매일 2명씩 청소 인원을 자동 배정합니다.</p>
     </div>
-    <div class="updated">
-      <div class="label">최근 업데이트</div>
-      <div class="date">2026-05-24</div>
-    </div>
+    <div class="updated" id="updatedLabel"></div>
   </div>
 
   <!-- Status -->
@@ -980,6 +972,17 @@ $('backBtn').addEventListener('click', () => {
   $('result').style.display = 'none';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
+
+// ============================================================
+// 헤더 우상단 "updated: YYYY-MM-DD" — 한국 표준시(KST) 기준
+// ============================================================
+(function showUpdated() {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  $('updatedLabel').textContent = `updated: ${fmt.format(new Date())}`;
+})();
 
 // ============================================================
 // 부팅
