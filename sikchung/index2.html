@@ -1325,16 +1325,22 @@ function renderResult(r) {
   const body = $('scheduleBody');
   body.innerHTML = '';
 
-  // 평일 아침/저녁에 같은 사람이 들어가 있으면 칼럼 순서를 아침과 동일하게 맞춤.
-  // (백트래킹이 (a,b)를 i<j 루프로 만들어서 같은 페어라도 슬롯 위치가 뒤집힐 수 있음)
+  // 평일 아침/저녁 칼럼 정렬:
+  // 한 명이라도 겹치면, 그 사람이 같은 column 에 오도록 evening 두 슬롯을 swap.
+  // 일반적으로 "현재 정렬 vs swap 정렬" 중 같은-column 일치 수가 더 많은 쪽 채택.
+  function alignScore(m, e) {
+    let s = 0;
+    if (m[0] && e[0] && m[0].id === e[0].id) s++;
+    if (m[1] && e[1] && m[1].id === e[1].id) s++;
+    return s;
+  }
   for (let i = 0; i < 10; i += 2) {
     const m = r.schedule[i];
     const e = r.schedule[i+1];
-    if (!m[0] || !e[0] || !e[1]) continue;
-    // morning[0] 의 사람이 evening[1] 에 있고 evening[0] 에는 없으면 evening 두 슬롯을 swap
-    if (e[0].id !== m[0].id && e[1].id === m[0].id) {
-      [e[0], e[1]] = [e[1], e[0]];
-    }
+    if (!e[0] && !e[1]) continue;
+    const cur = alignScore(m, e);
+    const swp = alignScore(m, [e[1], e[0]]);
+    if (swp > cur) [e[0], e[1]] = [e[1], e[0]];
   }
 
   // 주말 인원 → 그가 들어간 주말 day 라벨 매핑 ("토"/"일" 또는 "토일")
@@ -1410,7 +1416,6 @@ function renderResult(r) {
     div.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
     summary.appendChild(div);
   }
-  stat('완전 배정된 요일', `${r.fullDays} / 7`, r.fullDays === 7 ? 'ok' : (r.fullDays >= 4 ? '' : 'warn'));
   stat('미배정 슬롯', `${r.emptySlots}개`, r.emptySlots === 0 ? 'ok' : 'warn');
   stat('배정된 인원', `${r.assignCount.size}명`);
   stat('이번 주 제외', `${r.skipped.length}명`);
