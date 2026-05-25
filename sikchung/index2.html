@@ -564,7 +564,7 @@ function initPeople() {
     id: uid(),
     name,
     restricted: defaultRestrictedFor(name),
-    double: true, // index2 디폴트: 모두 주 2회 ON
+    double: false, // index2 디폴트: 주 2회 OFF
     priority: DEFAULT_NAMES.length - i,
     group: DEFAULT_GROUPS[name] || null,
     rookie: false
@@ -820,7 +820,7 @@ $('modalReset').addEventListener('click', () => {
   const defaultIdx = DEFAULT_NAMES.indexOf(p.name);
   const defaultPriority = defaultIdx >= 0 ? (DEFAULT_NAMES.length - defaultIdx) : 0;
   p.restricted = defaultRestrictedFor(p.name); // 12칸 배열
-  p.double = true; // index2 디폴트: 주 2회 ON
+  p.double = false; // index2 디폴트: 주 2회 OFF
   p.priority = defaultPriority;
   p.rookie = false;
   renderModalBody();
@@ -891,7 +891,7 @@ $('addBtn').addEventListener('click', () => {
     id: uid(),
     name,
     restricted: defaultRestrictedFor(name), // 12칸 배열
-    double: true, // index2 디폴트: 주 2회 ON
+    double: false, // index2 디폴트: 주 2회 OFF
     priority: 0,
     group: DEFAULT_GROUPS[name] || null,
     rookie: false
