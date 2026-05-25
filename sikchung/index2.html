@@ -252,7 +252,7 @@ table.schedule tr.day-divider td { border-top: 2px solid var(--ink); }
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
 }
 .day-grid {
-  display: grid; grid-template-columns: 40px 1fr 1fr; gap: 6px;
+  display: grid; grid-template-columns: 36px 1fr 1fr 1fr; gap: 6px;
   align-items: center;
 }
 .day-grid .grid-header {
@@ -272,7 +272,7 @@ table.schedule tr.day-divider td { border-top: 2px solid var(--ink); }
   background: #FEE2E2; border-color: #FCA5A5; color: var(--red); font-weight: 600;
 }
 .day-toggle:hover:not(.active) { background: var(--bg); }
-.day-toggle.full-week { grid-column: 2 / 4; }
+.day-toggle.full-week { grid-column: 2 / 5; }
 .inline-toggle {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px; background: var(--bg); border-radius: 10px; cursor: pointer;
@@ -656,31 +656,85 @@ function createSlotToggle(slotIdx, text, fullWeek) {
   return btn;
 }
 
+// 월~금용 한 행 — 아침/저녁/전체 세 버튼이 서로 상태 동기화
+function appendWeekdayRow(dayIdx) {
+  const morningIdx = dayIdx * 2;
+  const eveningIdx = dayIdx * 2 + 1;
+
+  const label = document.createElement('div');
+  label.className = 'day-label-cell';
+  label.textContent = TIME_SLOTS[morningIdx].day;
+  modalDays.appendChild(label);
+
+  // 세 버튼 미리 생성 → 핸들러에서 서로 참조
+  const mBtn = document.createElement('button');
+  const eBtn = document.createElement('button');
+  const allBtn = document.createElement('button');
+
+  function syncAll() {
+    const c = editingPerson();
+    if (!c) return;
+    allBtn.classList.toggle('active', c.restricted[morningIdx] && c.restricted[eveningIdx]);
+  }
+
+  function setupSlot(btn, idx, text) {
+    btn.type = 'button';
+    const c = editingPerson();
+    btn.className = 'day-toggle' + (c && c.restricted[idx] ? ' active' : '');
+    btn.textContent = text;
+    btn.addEventListener('click', () => {
+      const cur = editingPerson();
+      if (!cur) return;
+      cur.restricted[idx] = !cur.restricted[idx];
+      btn.classList.toggle('active', cur.restricted[idx]);
+      syncAll();
+      autoSave();
+    });
+  }
+  setupSlot(mBtn, morningIdx, '아침');
+  setupSlot(eBtn, eveningIdx, '저녁');
+
+  // 전체 버튼: 둘 다 켜져 있을 때만 active 표시. 누르면 두 슬롯을 동시에 토글.
+  allBtn.type = 'button';
+  const cur = editingPerson();
+  const bothOn = cur && cur.restricted[morningIdx] && cur.restricted[eveningIdx];
+  allBtn.className = 'day-toggle' + (bothOn ? ' active' : '');
+  allBtn.textContent = '전체';
+  allBtn.addEventListener('click', () => {
+    const c = editingPerson();
+    if (!c) return;
+    const newVal = !(c.restricted[morningIdx] && c.restricted[eveningIdx]);
+    c.restricted[morningIdx] = newVal;
+    c.restricted[eveningIdx] = newVal;
+    mBtn.classList.toggle('active', newVal);
+    eBtn.classList.toggle('active', newVal);
+    allBtn.classList.toggle('active', newVal);
+    autoSave();
+  });
+
+  modalDays.appendChild(mBtn);
+  modalDays.appendChild(eBtn);
+  modalDays.appendChild(allBtn);
+}
+
 // 모달 내부 폼을 현재 인원의 실제 값으로 다시 그림 (초기화/열기에서 공통 사용)
 function renderModalBody() {
   const p = editingPerson();
   if (!p) return;
 
-  // 그리드: [요일 라벨 | 아침 | 저녁]
+  // 그리드: [요일 라벨 | 아침 | 저녁 | 전체]
   modalDays.innerHTML = '';
-  // 헤더 행
+  // 헤더 행 — 라벨 자리 + 3개 헤더
   modalDays.appendChild(document.createElement('div'));
-  const hM = document.createElement('div'); hM.className = 'grid-header'; hM.textContent = '아침';
-  const hE = document.createElement('div'); hE.className = 'grid-header'; hE.textContent = '저녁';
-  modalDays.appendChild(hM);
-  modalDays.appendChild(hE);
-  // 월~금 (5행, 각 행에 아침/저녁 두 칸)
-  for (let i = 0; i < 5; i++) {
-    const morningIdx = i * 2;
-    const eveningIdx = i * 2 + 1;
-    const label = document.createElement('div');
-    label.className = 'day-label-cell';
-    label.textContent = TIME_SLOTS[morningIdx].day;
-    modalDays.appendChild(label);
-    modalDays.appendChild(createSlotToggle(morningIdx, '아침', false));
-    modalDays.appendChild(createSlotToggle(eveningIdx, '저녁', false));
+  for (const h of ['아침', '저녁', '전체']) {
+    const cell = document.createElement('div');
+    cell.className = 'grid-header';
+    cell.textContent = h;
+    modalDays.appendChild(cell);
   }
-  // 토·일 (각 행에 단일 버튼)
+  // 월~금 (5행)
+  for (let i = 0; i < 5; i++) appendWeekdayRow(i);
+  // 토·일 (각 행에 단일 '저녁' 버튼이 전체 폭)
   for (let i = 10; i < SLOTS_COUNT; i++) {
     const label = document.createElement('div');
     label.className = 'day-label-cell';
