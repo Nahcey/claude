@@ -337,10 +337,10 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
     <div class="updated" id="updatedLabel"></div>
   </div>
 
-  <!-- Status -->
-  <div id="status" class="status green">
+  <!-- Status (UI 미노출 — 알고리즘 진단용 내부 요소만 유지) -->
+  <div id="status" class="status green" style="display:none;">
     <div class="dot"></div>
-    <div id="statusText">충분한 인원이 확보되었습니다. 일정을 생성하세요.</div>
+    <div id="statusText"></div>
   </div>
   <div id="infoBanner" class="info-banner" style="display:none;"></div>
 
