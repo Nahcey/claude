@@ -168,11 +168,6 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
   background: var(--accent); color: white; border-radius: 4px;
   margin-left: 2px; white-space: nowrap;
 }
-.badge-weekend-cross {
-  display: inline-block; padding: 1px 4px; font-size: 9px; font-weight: 700;
-  background: #E9D5FF; color: #6B21A8; border-radius: 4px;
-  margin-left: 2px; white-space: nowrap;
-}
 .badge-skip {
   display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 600;
   background: #E5E7EB; color: var(--muted); border-radius: 4px; margin-left: 6px;
@@ -1638,7 +1633,7 @@ function renderEditPanel() {
 }
 
 // 한 (요일, 시간대) 셀 — 슬롯 인덱스가 -1 이면 "—" (해당 시간대 없음, 토/일 아침 칸)
-function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
+function buildShiftCell(slotIdx, r, trueCrossover) {
   const td = document.createElement('td');
   if (slotIdx < 0) {
     td.className = 'cell-na';
@@ -1657,7 +1652,7 @@ function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
   if (editMode) {
     // 편집 모드: 슬롯 position 별로 클릭 가능한 .slot-pos 요소 렌더
     for (let pos = 0; pos < SLOTS_PER_DAY; pos++) {
-      wrap.appendChild(buildSlotPos(slotIdx, pos, r, weekendCrossover));
+      wrap.appendChild(buildSlotPos(slotIdx, pos, r));
     }
   } else {
     // 보기 모드: 기존 통합 렌더 (chip + 미배정 블록 + 가능 인원 목록)
@@ -1671,12 +1666,6 @@ function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
       const heavy = !!p.double && cnt >= 3;
       chip.className = 'person-chip' + (heavy ? ' crossover' : '');
       chip.textContent = p.name;
-      if (!isWeekendSlot(slotIdx) && weekendCrossover.has(p.id)) {
-        const b = document.createElement('span');
-        b.className = 'badge-weekend-cross';
-        b.textContent = '+' + weekendCrossover.get(p.id);
-        chip.appendChild(b);
-      }
       wrap.appendChild(chip);
     }
     const emptyCount = SLOTS_PER_DAY - filledList.length;
@@ -1704,7 +1693,7 @@ function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
 }
 
 // 편집 모드용 — 슬롯 position 1칸 (클릭 가능 + 선택/스왑 가능 테두리 표시)
-function buildSlotPos(slotIdx, pos, r, weekendCrossover) {
+function buildSlotPos(slotIdx, pos, r) {
   const p = lastResult.schedule[slotIdx][pos];
   const el = document.createElement('span');
   el.className = 'slot-pos';
@@ -1713,12 +1702,6 @@ function buildSlotPos(slotIdx, pos, r, weekendCrossover) {
     const cnt = r.assignCount.get(p.id) || 0;
     if (!!p.double && cnt >= 3) el.classList.add('crossover');
     el.appendChild(document.createTextNode(p.name));
-    if (!isWeekendSlot(slotIdx) && weekendCrossover.has(p.id)) {
-      const b = document.createElement('span');
-      b.className = 'badge-weekend-cross';
-      b.textContent = '+' + weekendCrossover.get(p.id);
-      el.appendChild(b);
-    }
   } else {
     el.classList.add('empty-pos');
     el.appendChild(document.createTextNode('미배정'));
@@ -1760,24 +1743,17 @@ function renderResult(r) {
     if (swp > cur) [e[0], e[1]] = [e[1], e[0]];
   }
 
-  // 주말 인원 → 그가 들어간 주말 day 라벨 매핑 ("토"/"일" 또는 "토일")
-  // 평일 슬롯 chip 에 "+토" 같은 작은 배지를 붙여 주말 겸직임을 표시한다.
-  const weekendCrossover = new Map(); // id → "토"/"일"/"토일"
-  const weekdayIds = new Set();       // 평일 슬롯에 한 번이라도 들어간 인원
+  // 주말 + 평일 둘 다 들어간 인원 (현재 정책에서는 mutual exclusion 으로 발생하지 않지만
+  //  yellow chip 강조 로직이 이 set 을 사용하므로 계산은 유지)
+  const weekdayIds = new Set();
+  const weekendIds = new Set();
   for (let i = 0; i < SLOTS_COUNT; i++) {
     for (const p of r.schedule[i]) if (p) {
-      if (i >= 10) {
-        const label = TIME_SLOTS[i].day;
-        const cur = weekendCrossover.get(p.id) || '';
-        if (!cur.includes(label)) weekendCrossover.set(p.id, cur + label);
-      } else {
-        weekdayIds.add(p.id);
-      }
+      if (i >= 10) weekendIds.add(p.id); else weekdayIds.add(p.id);
     }
   }
-  // 주말 + 평일 둘 다 들어간 인원 (orange "N회" 배지 대상)
   const trueCrossover = new Set();
-  for (const id of weekendCrossover.keys()) if (weekdayIds.has(id)) trueCrossover.add(id);
+  for (const id of weekendIds) if (weekdayIds.has(id)) trueCrossover.add(id);
 
   // 한 행에 [요일 | 아침 | 저녁] — 월~금 5행 + 토 + 일 = 7행
   const WEEK_DAY_LABELS = ['월','화','수','목','금','토','일'];
@@ -1800,8 +1776,8 @@ function renderResult(r) {
       eveningIdx = 10 + (dayIdx - 5);
     }
 
-    tr.appendChild(buildShiftCell(morningIdx, r, weekendCrossover, trueCrossover));
-    tr.appendChild(buildShiftCell(eveningIdx, r, weekendCrossover, trueCrossover));
+    tr.appendChild(buildShiftCell(morningIdx, r, trueCrossover));
+    tr.appendChild(buildShiftCell(eveningIdx, r, trueCrossover));
     body.appendChild(tr);
   }
 
