@@ -433,6 +433,13 @@ const DEFAULT_GROUPS = {
   '윤민형':'B','한우현':'B','권정훈':'B','정한결':'B','김최원':'B',
   '오승호':'C','박예찬':'C','권기범':'C','최정협':'C','전유찬':'C'
 };
+// 특정 인원의 디폴트 요일 제한 (index: 월=0 … 일=6, true=불가)
+const DEFAULT_RESTRICTED = {
+  '윤민형': [true, true, true, true, true, false, false]   // 월~금 제한 (주말만 가능)
+};
+function defaultRestrictedFor(name) {
+  return (DEFAULT_RESTRICTED[name] || [false,false,false,false,false,false,false]).slice();
+}
 
 let people = []; // {id, name, restricted: bool[7], double: bool, priority: number}
 let nextId = 1;
@@ -457,7 +464,7 @@ function initPeople() {
   people = DEFAULT_NAMES.map((name, i) => ({
     id: uid(),
     name,
-    restricted: [false, false, false, false, false, false, false],
+    restricted: defaultRestrictedFor(name),
     double: false,
     priority: DEFAULT_NAMES.length - i,
     group: DEFAULT_GROUPS[name] || null,
@@ -629,7 +636,7 @@ $('modalReset').addEventListener('click', () => {
   if (!confirm('이 인원의 설정(제한 요일 · 주 2회 · 우선순위 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
   const defaultIdx = DEFAULT_NAMES.indexOf(p.name);
   const defaultPriority = defaultIdx >= 0 ? (DEFAULT_NAMES.length - defaultIdx) : 0;
-  p.restricted = [false,false,false,false,false,false,false];
+  p.restricted = defaultRestrictedFor(p.name);
   p.double = false;
   p.priority = defaultPriority;
   p.rookie = false;
@@ -698,7 +705,7 @@ $('addBtn').addEventListener('click', () => {
   people.push({
     id: uid(),
     name,
-    restricted: [false,false,false,false,false,false,false],
+    restricted: defaultRestrictedFor(name),
     double: false,
     priority: 0,
     group: DEFAULT_GROUPS[name] || null,
