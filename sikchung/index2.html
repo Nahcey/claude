@@ -1002,13 +1002,7 @@ function pairPreferenceForSlot(a, b, slotIdx, schedule) {
       base += matchCount * 800; // 두 명 일치 → +1600, 한 명 → +800 (이전 500 보다 강화)
     }
   }
-  // 모든 평일 슬롯: 페어 인원 중 이미 주말에 배정된 사람이 있으면 강한 페널티
-  if (slotIdx < 10) {
-    const aOnWk = schedule[10].some(x => x && x.id === a.id) || schedule[11].some(x => x && x.id === a.id);
-    const bOnWk = schedule[10].some(x => x && x.id === b.id) || schedule[11].some(x => x && x.id === b.id);
-    if (aOnWk) base -= 2000;
-    if (bOnWk) base -= 2000;
-  }
+  // 주말 overflow 는 canTake 에서 하드 차단되므로 별도 평일 페널티 없음.
   // 주말 슬롯: 주 2회 ON 인원 우선
   if (slotIdx >= 10) {
     if (a.double) base += 50;
@@ -1027,14 +1021,15 @@ function solveBacktrack(active, timeBudgetMs = 600) {
   const wkndCounts = new Map(active.map(p => [p.id, 0])); // 주말 슬롯에 들어간 횟수
   const start = Date.now();
 
-  // 하드 제약: 인원당 총 slot 수가 (p.double ? 4 : 2) 미만, 주말은 본인당 1슬롯 이내.
-  // 주말 1슬롯이 들어가면 평일 추가 배정은 가능하지만 score에서 페널티가 큼 (소프트 우선).
+  // 하드 제약:
+  //   - 인원당 총 slot 수가 (p.double ? 4 : 2) 미만
+  //   - 주말에 한 번이라도 들어간 사람은 그 주 다른 어떤 슬롯도 못 들어감 (주말 = 1슬롯 전용)
   function canTake(p, slotIdx) {
     const tot = counts.get(p.id);
     const wk  = wkndCounts.get(p.id);
     const cap = p.double ? 4 : 2;
     if (tot >= cap) return false;
-    if (isWeekend(slotIdx) && wk >= 1) return false; // 한 사람이 토 + 일 동시는 막음
+    if (wk >= 1) return false; // 주말 들어가면 그 주는 그 1슬롯만
     return true;
   }
   function take(p, slotIdx) {
@@ -1190,7 +1185,7 @@ function solveGreedy(active) {
   function capOf(p) { return p.double ? 4 : 2; }
   function canTake(p, slotIdx) {
     if (counts.get(p.id) >= capOf(p)) return false;
-    if (isWeekend(slotIdx) && wkndCounts.get(p.id) >= 1) return false;
+    if (wkndCounts.get(p.id) >= 1) return false; // 주말 들어가면 평일도 못 들어감
     return true;
   }
   function place(p, slotIdx, slotPos) {
@@ -1282,20 +1277,8 @@ function solveGreedy(active) {
     }
   }
 
-  // ---- Phase 4: 미배정 슬롯이 남아 있으면 주말 인원도 평일 추가 배정 (last resort) ----
-  for (let d = 0; d < 10; d++) {
-    while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
-      const cands = active.filter(p =>
-        !p.restricted[d] && counts.get(p.id) < capOf(p) &&
-        !schedule[d].some(x => x && x.id === p.id)
-      );
-      if (cands.length === 0) break;
-      cands.sort((a, b) => counts.get(a.id) - counts.get(b.id));
-      const p = cands[0];
-      const pos = schedule[d].findIndex(x => x === null);
-      place(p, d, pos);
-    }
-  }
+  // (이전에 있던 'Phase 4 last-resort: 주말 인원의 평일 overflow' 단계는 제거.
+  //  주말에 한 번 들어간 인원은 어떠한 평일 슬롯에도 넣지 않음.)
 
   const assignedIds = new Set();
   for (const day of schedule) for (const p of day) if (p) assignedIds.add(p.id);
