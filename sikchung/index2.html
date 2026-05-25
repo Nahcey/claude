@@ -155,6 +155,9 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
   white-space: nowrap; word-break: keep-all;
   flex-shrink: 0;
 }
+.person-chip.crossover {
+  background: #FDE68A; color: #78350F;
+}
 .person-chip > * { flex-shrink: 0; }
 .badge-2x {
   display: inline-block; padding: 1px 4px; font-size: 9px; font-weight: 700;
@@ -1358,15 +1361,9 @@ function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
     const p = slot[s];
     if (p) {
       const chip = document.createElement('span');
-      chip.className = 'person-chip';
+      // 주말 + 평일 둘 다 들어간 인원은 chip 자체를 노란색으로 표시 (오렌지 "N회" 배지 대체)
+      chip.className = 'person-chip' + (trueCrossover.has(p.id) ? ' crossover' : '');
       chip.textContent = p.name;
-      const cnt = r.assignCount.get(p.id) || 0;
-      if (trueCrossover.has(p.id)) {
-        const b = document.createElement('span');
-        b.className = 'badge-2x';
-        b.textContent = cnt + '회';
-        chip.appendChild(b);
-      }
       if (!isWeekendSlot(slotIdx) && weekendCrossover.has(p.id)) {
         const b = document.createElement('span');
         b.className = 'badge-weekend-cross';
