@@ -188,6 +188,48 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
   word-break: keep-all; line-height: 1.35; max-width: 140px;
 }
 
+/* 결과 편집 모드 */
+.slot-pos {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 500; margin: 1px;
+  white-space: nowrap; word-break: keep-all;
+  border: 2px solid transparent; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.slot-pos.chip-wrap { background: #F3F4F6; color: var(--ink); }
+.slot-pos.chip-wrap.crossover { background: #FDE68A; color: #78350F; }
+.slot-pos.empty-pos {
+  background: rgba(220,38,38,0.08); color: var(--red); font-weight: 600;
+}
+.slot-pos.selected { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+.slot-pos.swap-ok  { border-color: var(--green); }
+.slot-pos.swap-bad { border-color: var(--red); opacity: 0.55; }
+.slot-pos > * { flex-shrink: 0; }
+
+#editPanel {
+  margin-top: 12px; padding: 12px;
+  background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 10px;
+}
+.edit-panel-header {
+  font-weight: 600; font-size: 13px; color: #075985; margin-bottom: 8px;
+}
+.edit-panel-help { font-size: 11px; color: #075985; margin-bottom: 8px; }
+.edit-candidates {
+  display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0;
+}
+.cand-chip {
+  padding: 4px 10px; background: white; border: 1px solid var(--border);
+  color: var(--ink); border-radius: 999px; font-size: 12px;
+  font-family: inherit; cursor: pointer;
+  white-space: nowrap; word-break: keep-all;
+}
+.cand-chip:hover { background: #DBEAFE; border-color: var(--primary); }
+.edit-panel-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;
+}
+.edit-panel-actions .btn { padding: 6px 12px; font-size: 13px; }
+
 .summary {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px; margin: 16px 0;
@@ -441,8 +483,11 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
       <div id="exclusionList"></div>
       <div id="failList"></div>
 
+      <div id="editPanel" style="display:none;"></div>
+
       <div class="actions-row" style="margin-top:18px;">
         <button class="btn btn-primary" id="regenBtn">재생성</button>
+        <button class="btn btn-secondary" id="editBtn">편집</button>
         <button class="btn btn-secondary" id="backBtn">다시 설정</button>
       </div>
     </div>
@@ -1432,6 +1477,166 @@ function generate() {
 // ============================================================
 function isWeekendSlot(idx) { return idx >= 10; }
 
+// ============================================================
+// 결과 화면 편집 모드
+// ============================================================
+let editMode = false;
+let selectedSlot = null; // { slotIdx, pos } 또는 null
+
+function toggleEditMode() {
+  editMode = !editMode;
+  selectedSlot = null;
+  const btn = $('editBtn');
+  if (btn) btn.textContent = editMode ? '편집 종료' : '편집';
+  if (lastResult) renderResult(lastResult);
+}
+
+// 선택된 슬롯과 (targetSlotIdx, targetPos) 사이 스왑이 제한사항을 만족하는지
+function isCompatibleSwap(targetSlotIdx, targetPos) {
+  if (!selectedSlot) return false;
+  if (selectedSlot.slotIdx === targetSlotIdx && selectedSlot.pos === targetPos) return false;
+  const aP = lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos];
+  const bP = lastResult.schedule[targetSlotIdx][targetPos];
+  // aP 가 target slot 에 들어갈 수 있어야 함 (요일 제한 + 같은 슬롯 중복 금지)
+  if (aP) {
+    if (aP.restricted[targetSlotIdx]) return false;
+    if (lastResult.schedule[targetSlotIdx].some((x, i) => x && x.id === aP.id && i !== targetPos)) return false;
+  }
+  // bP 가 selected slot 에 들어갈 수 있어야 함
+  if (bP) {
+    if (bP.restricted[selectedSlot.slotIdx]) return false;
+    if (lastResult.schedule[selectedSlot.slotIdx].some((x, i) => x && x.id === bP.id && i !== selectedSlot.pos)) return false;
+  }
+  return true;
+}
+
+function performSwap(targetSlotIdx, targetPos) {
+  if (!selectedSlot) return;
+  const a = lastResult.schedule[selectedSlot.slotIdx];
+  const b = lastResult.schedule[targetSlotIdx];
+  const tmp = a[selectedSlot.pos];
+  a[selectedSlot.pos] = b[targetPos];
+  b[targetPos] = tmp;
+  selectedSlot = null;
+  recomputeAndRender();
+}
+
+function recomputeStats() {
+  if (!lastResult) return;
+  const ac = new Map();
+  let emptySlots = 0;
+  for (const day of lastResult.schedule) {
+    for (const p of day) if (p) ac.set(p.id, (ac.get(p.id) || 0) + 1);
+    emptySlots += SLOTS_PER_DAY - day.filter(Boolean).length;
+  }
+  lastResult.assignCount = ac;
+  lastResult.emptySlots = emptySlots;
+}
+
+function recomputeAndRender() {
+  recomputeStats();
+  renderResult(lastResult);
+}
+
+function handleSlotClick(slotIdx, pos) {
+  if (!editMode) return;
+  if (!selectedSlot) {
+    selectedSlot = { slotIdx, pos };
+    renderResult(lastResult);
+    return;
+  }
+  if (selectedSlot.slotIdx === slotIdx && selectedSlot.pos === pos) {
+    selectedSlot = null;
+    renderResult(lastResult);
+    return;
+  }
+  if (isCompatibleSwap(slotIdx, pos)) {
+    performSwap(slotIdx, pos);
+  }
+  // 비호환(swap-bad) 슬롯은 클릭 무시
+}
+
+function renderEditPanel() {
+  const panel = $('editPanel');
+  if (!panel) return;
+  if (!editMode || !selectedSlot) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.style.display = '';
+  panel.innerHTML = '';
+
+  const ts = TIME_SLOTS[selectedSlot.slotIdx];
+  const currentP = lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos];
+
+  const header = document.createElement('div');
+  header.className = 'edit-panel-header';
+  header.textContent = `${ts.label} 슬롯 ${selectedSlot.pos + 1} 편집 — 현재: ${currentP ? currentP.name : '미배정'}`;
+  panel.appendChild(header);
+
+  const help = document.createElement('div');
+  help.className = 'edit-panel-help';
+  help.textContent = '· 아래 인원을 누르면 이 자리에 배정됩니다.   · 일정 표의 초록 테두리 슬롯을 누르면 스왑.';
+  panel.appendChild(help);
+
+  // 제거 버튼 (배정된 슬롯에만)
+  if (currentP) {
+    const remRow = document.createElement('div');
+    remRow.style.marginBottom = '8px';
+    const rem = document.createElement('button');
+    rem.className = 'btn';
+    rem.style.cssText = 'background:#FEE2E2;color:var(--red);padding:6px 12px;font-weight:500;font-size:13px;';
+    rem.textContent = '✕ ' + currentP.name + ' 제거';
+    rem.addEventListener('click', () => {
+      lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos] = null;
+      selectedSlot = null;
+      recomputeAndRender();
+    });
+    remRow.appendChild(rem);
+    panel.appendChild(remRow);
+  }
+
+  // 후보 목록 — 그 슬롯에 제한 없는 인원, 같은 슬롯 다른 칸 중복 제외, 현재 인물 제외
+  const candLabel = document.createElement('div');
+  candLabel.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:6px;';
+  candLabel.textContent = '이 자리에 넣을 수 있는 인원 (요일 제한 없음)';
+  panel.appendChild(candLabel);
+
+  const list = document.createElement('div');
+  list.className = 'edit-candidates';
+  const cands = people.filter(p =>
+    !p.restricted[selectedSlot.slotIdx] &&
+    (!currentP || p.id !== currentP.id) &&
+    !lastResult.schedule[selectedSlot.slotIdx].some((x, i) => x && x.id === p.id && i !== selectedSlot.pos)
+  );
+  if (cands.length === 0) {
+    const none = document.createElement('div');
+    none.style.cssText = 'color:var(--muted);font-size:12px;';
+    none.textContent = '가능한 인원이 없습니다.';
+    list.appendChild(none);
+  } else {
+    for (const p of cands) {
+      const chip = document.createElement('button');
+      chip.className = 'cand-chip';
+      chip.textContent = p.name;
+      chip.addEventListener('click', () => {
+        lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos] = p;
+        selectedSlot = null;
+        recomputeAndRender();
+      });
+      list.appendChild(chip);
+    }
+  }
+  panel.appendChild(list);
+
+  // 선택 취소
+  const actions = document.createElement('div');
+  actions.className = 'edit-panel-actions';
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-secondary';
+  cancel.textContent = '선택 취소';
+  cancel.addEventListener('click', () => { selectedSlot = null; renderResult(lastResult); });
+  actions.appendChild(cancel);
+  panel.appendChild(actions);
+}
+
 // 한 (요일, 시간대) 셀 — 슬롯 인덱스가 -1 이면 "—" (해당 시간대 없음, 토/일 아침 칸)
 function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
   const td = document.createElement('td');
@@ -1448,47 +1653,88 @@ function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
 
   const wrap = document.createElement('div');
   wrap.className = 'cell-chips';
-  // 채워진 인원 chip 먼저 렌더
-  const filledList = [];
-  for (let s = 0; s < SLOTS_PER_DAY; s++) {
-    const p = slot[s];
-    if (!p) continue;
-    filledList.push(p);
-    const chip = document.createElement('span');
+
+  if (editMode) {
+    // 편집 모드: 슬롯 position 별로 클릭 가능한 .slot-pos 요소 렌더
+    for (let pos = 0; pos < SLOTS_PER_DAY; pos++) {
+      wrap.appendChild(buildSlotPos(slotIdx, pos, r, weekendCrossover));
+    }
+  } else {
+    // 보기 모드: 기존 통합 렌더 (chip + 미배정 블록 + 가능 인원 목록)
+    const filledList = [];
+    for (let s = 0; s < SLOTS_PER_DAY; s++) {
+      const p = slot[s];
+      if (!p) continue;
+      filledList.push(p);
+      const chip = document.createElement('span');
+      const cnt = r.assignCount.get(p.id) || 0;
+      const heavy = !!p.double && cnt >= 3;
+      chip.className = 'person-chip' + (heavy ? ' crossover' : '');
+      chip.textContent = p.name;
+      if (!isWeekendSlot(slotIdx) && weekendCrossover.has(p.id)) {
+        const b = document.createElement('span');
+        b.className = 'badge-weekend-cross';
+        b.textContent = '+' + weekendCrossover.get(p.id);
+        chip.appendChild(b);
+      }
+      wrap.appendChild(chip);
+    }
+    const emptyCount = SLOTS_PER_DAY - filledList.length;
+    if (emptyCount > 0) {
+      const block = document.createElement('span');
+      block.className = 'unassigned-wrap';
+      const label = document.createElement('span');
+      label.className = 'unassigned';
+      label.textContent = emptyCount > 1 ? `미배정 (${emptyCount})` : '미배정';
+      block.appendChild(label);
+      const cands = people.filter(p2 =>
+        !p2.restricted[slotIdx] && !filledList.some(x => x.id === p2.id)
+      );
+      if (cands.length > 0) {
+        const list = document.createElement('span');
+        list.className = 'unassigned-cands';
+        list.textContent = '가능: ' + cands.map(c => c.name).join(', ');
+        block.appendChild(list);
+      }
+      wrap.appendChild(block);
+    }
+  }
+  td.appendChild(wrap);
+  return td;
+}
+
+// 편집 모드용 — 슬롯 position 1칸 (클릭 가능 + 선택/스왑 가능 테두리 표시)
+function buildSlotPos(slotIdx, pos, r, weekendCrossover) {
+  const p = lastResult.schedule[slotIdx][pos];
+  const el = document.createElement('span');
+  el.className = 'slot-pos';
+  if (p) {
+    el.classList.add('chip-wrap');
     const cnt = r.assignCount.get(p.id) || 0;
-    const heavy = !!p.double && cnt >= 3;
-    chip.className = 'person-chip' + (heavy ? ' crossover' : '');
-    chip.textContent = p.name;
+    if (!!p.double && cnt >= 3) el.classList.add('crossover');
+    el.appendChild(document.createTextNode(p.name));
     if (!isWeekendSlot(slotIdx) && weekendCrossover.has(p.id)) {
       const b = document.createElement('span');
       b.className = 'badge-weekend-cross';
       b.textContent = '+' + weekendCrossover.get(p.id);
-      chip.appendChild(b);
+      el.appendChild(b);
     }
-    wrap.appendChild(chip);
+  } else {
+    el.classList.add('empty-pos');
+    el.appendChild(document.createTextNode('미배정'));
   }
-  // 미배정 슬롯이 남으면 셀당 한 번 "미배정" + 가능한 인원 목록 표시
-  const emptyCount = SLOTS_PER_DAY - filledList.length;
-  if (emptyCount > 0) {
-    const block = document.createElement('span');
-    block.className = 'unassigned-wrap';
-    const label = document.createElement('span');
-    label.className = 'unassigned';
-    label.textContent = emptyCount > 1 ? `미배정 (${emptyCount})` : '미배정';
-    block.appendChild(label);
-    const cands = people.filter(p2 =>
-      !p2.restricted[slotIdx] && !filledList.some(x => x.id === p2.id)
-    );
-    if (cands.length > 0) {
-      const list = document.createElement('span');
-      list.className = 'unassigned-cands';
-      list.textContent = '가능: ' + cands.map(c => c.name).join(', ');
-      block.appendChild(list);
+  // 선택 / 스왑 가능 / 스왑 불가 테두리
+  if (selectedSlot) {
+    if (selectedSlot.slotIdx === slotIdx && selectedSlot.pos === pos) {
+      el.classList.add('selected');
+    } else if (isCompatibleSwap(slotIdx, pos)) {
+      el.classList.add('swap-ok');
+    } else {
+      el.classList.add('swap-bad');
     }
-    wrap.appendChild(block);
   }
-  td.appendChild(wrap);
-  return td;
+  el.addEventListener('click', () => handleSlotClick(slotIdx, pos));
+  return el;
 }
 
 function renderResult(r) {
@@ -1612,8 +1858,11 @@ function renderResult(r) {
     failDiv.appendChild(wrap);
   }
 
-  // 결과 영역으로 스크롤
-  $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // 편집 모드 패널
+  renderEditPanel();
+
+  // 결과 영역으로 스크롤 (편집 중에는 스크롤 점프 안 함)
+  if (!editMode) $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // 생성 중 상태 표시 — 버튼 텍스트/disabled + setTimeout 으로 UI 먼저 그리고 무거운 작업 실행
@@ -1643,8 +1892,16 @@ $('generateBtn').addEventListener('click', () => {
   }
   runGenerate();
 });
-$('regenBtn').addEventListener('click', runGenerate);
+$('regenBtn').addEventListener('click', () => {
+  // 재생성 시 편집 모드 자동 해제
+  editMode = false; selectedSlot = null;
+  $('editBtn').textContent = '편집';
+  runGenerate();
+});
+$('editBtn').addEventListener('click', toggleEditMode);
 $('backBtn').addEventListener('click', () => {
+  editMode = false; selectedSlot = null;
+  $('editBtn').textContent = '편집';
   $('result').style.display = 'none';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
