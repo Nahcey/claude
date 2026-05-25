@@ -442,8 +442,8 @@ const TIME_SLOTS = [
   { day:'목', shift:'저녁', label:'목 저녁' },  // 7
   { day:'금', shift:'아침', label:'금 아침' },  // 8
   { day:'금', shift:'저녁', label:'금 저녁' },  // 9
-  { day:'토', shift:null,   label:'토'      },  // 10
-  { day:'일', shift:null,   label:'일'      }   // 11
+  { day:'토', shift:'저녁', label:'토 저녁' },  // 10
+  { day:'일', shift:'저녁', label:'일 저녁' }   // 11
 ];
 const SLOTS_COUNT  = TIME_SLOTS.length;          // 12
 const SLOTS_PER_DAY = 2;                          // 각 시간 슬롯당 인원
@@ -688,7 +688,7 @@ function renderModalBody() {
     label.className = 'day-label-cell';
     label.textContent = TIME_SLOTS[i].day;
     modalDays.appendChild(label);
-    modalDays.appendChild(createSlotToggle(i, '하루 전체', true));
+    modalDays.appendChild(createSlotToggle(i, '저녁', true));
   }
 
   // 스위치 및 입력 동기화
