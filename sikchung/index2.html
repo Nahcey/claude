@@ -177,7 +177,12 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
   display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 600;
   background: #FEF3C7; color: #92400E; border-radius: 4px; margin-left: 6px;
 }
-.unassigned { color: var(--red); font-weight: 500; font-size: 13px; }
+.unassigned { color: var(--red); font-weight: 600; font-size: 12px; }
+.unassigned-wrap { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.unassigned-cands {
+  font-size: 10px; color: #6B7280; text-align: center;
+  word-break: keep-all; line-height: 1.35; max-width: 140px;
+}
 
 .summary {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1406,28 +1411,44 @@ function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
 
   const wrap = document.createElement('div');
   wrap.className = 'cell-chips';
+  // 채워진 인원 chip 먼저 렌더
+  const filledList = [];
   for (let s = 0; s < SLOTS_PER_DAY; s++) {
     const p = slot[s];
-    if (p) {
-      const chip = document.createElement('span');
-      // "주 2회" ON 이면서 실제 배정이 3슬롯 이상인 인원만 chip 을 노란색으로 강조
-      const cnt = r.assignCount.get(p.id) || 0;
-      const heavy = !!p.double && cnt >= 3;
-      chip.className = 'person-chip' + (heavy ? ' crossover' : '');
-      chip.textContent = p.name;
-      if (!isWeekendSlot(slotIdx) && weekendCrossover.has(p.id)) {
-        const b = document.createElement('span');
-        b.className = 'badge-weekend-cross';
-        b.textContent = '+' + weekendCrossover.get(p.id);
-        chip.appendChild(b);
-      }
-      wrap.appendChild(chip);
-    } else {
-      const span = document.createElement('span');
-      span.className = 'unassigned';
-      span.textContent = '미배정';
-      wrap.appendChild(span);
+    if (!p) continue;
+    filledList.push(p);
+    const chip = document.createElement('span');
+    const cnt = r.assignCount.get(p.id) || 0;
+    const heavy = !!p.double && cnt >= 3;
+    chip.className = 'person-chip' + (heavy ? ' crossover' : '');
+    chip.textContent = p.name;
+    if (!isWeekendSlot(slotIdx) && weekendCrossover.has(p.id)) {
+      const b = document.createElement('span');
+      b.className = 'badge-weekend-cross';
+      b.textContent = '+' + weekendCrossover.get(p.id);
+      chip.appendChild(b);
     }
+    wrap.appendChild(chip);
+  }
+  // 미배정 슬롯이 남으면 셀당 한 번 "미배정" + 가능한 인원 목록 표시
+  const emptyCount = SLOTS_PER_DAY - filledList.length;
+  if (emptyCount > 0) {
+    const block = document.createElement('span');
+    block.className = 'unassigned-wrap';
+    const label = document.createElement('span');
+    label.className = 'unassigned';
+    label.textContent = emptyCount > 1 ? `미배정 (${emptyCount})` : '미배정';
+    block.appendChild(label);
+    const cands = people.filter(p2 =>
+      !p2.restricted[slotIdx] && !filledList.some(x => x.id === p2.id)
+    );
+    if (cands.length > 0) {
+      const list = document.createElement('span');
+      list.className = 'unassigned-cands';
+      list.textContent = '가능: ' + cands.map(c => c.name).join(', ');
+      block.appendChild(list);
+    }
+    wrap.appendChild(block);
   }
   td.appendChild(wrap);
   return td;
