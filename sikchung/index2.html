@@ -1361,8 +1361,10 @@ function buildShiftCell(slotIdx, r, weekendCrossover, trueCrossover) {
     const p = slot[s];
     if (p) {
       const chip = document.createElement('span');
-      // 주말 + 평일 둘 다 들어간 인원은 chip 자체를 노란색으로 표시 (오렌지 "N회" 배지 대체)
-      chip.className = 'person-chip' + (trueCrossover.has(p.id) ? ' crossover' : '');
+      // "주 2회" ON 이면서 실제 배정이 3슬롯 이상인 인원만 chip 을 노란색으로 강조
+      const cnt = r.assignCount.get(p.id) || 0;
+      const heavy = !!p.double && cnt >= 3;
+      chip.className = 'person-chip' + (heavy ? ' crossover' : '');
       chip.textContent = p.name;
       if (!isWeekendSlot(slotIdx) && weekendCrossover.has(p.id)) {
         const b = document.createElement('span');
