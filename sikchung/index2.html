@@ -975,10 +975,10 @@ function pairPreference(a, b) {
 
 // 슬롯 컨텍스트를 고려한 선호도.
 // 월~금의 저녁 슬롯이면 — 같은 요일 아침에 들어간 인원과 동일한 쌍에 큰 가산점.
-// (1명만 매치되어도 가산, 둘 다 매치되면 최고 점수)
+// 모든 평일 슬롯에서 — 이미 주말에 들어간 인원이 페어에 있으면 큰 페널티 (overflow 최후 수단).
 function pairPreferenceForSlot(a, b, slotIdx, schedule) {
   let base = pairPreference(a, b);
-  // 월~금 (인덱스 0~9) 중 저녁 (홀수 인덱스) 만 컨텍스트 적용
+  // 월~금 (인덱스 0~9) 중 저녁 (홀수 인덱스) 만 연속성 보너스
   if (slotIdx < 10 && (slotIdx % 2) === 1) {
     const morning = schedule[slotIdx - 1];
     if (morning) {
@@ -986,6 +986,13 @@ function pairPreferenceForSlot(a, b, slotIdx, schedule) {
       const matchCount = (mIds.includes(a.id) ? 1 : 0) + (mIds.includes(b.id) ? 1 : 0);
       base += matchCount * 500; // 두 명 일치 → +1000, 한 명 → +500
     }
+  }
+  // 모든 평일 슬롯: 페어 인원 중 이미 주말에 배정된 사람이 있으면 강한 페널티
+  if (slotIdx < 10) {
+    const aOnWk = schedule[10].some(x => x && x.id === a.id) || schedule[11].some(x => x && x.id === a.id);
+    const bOnWk = schedule[10].some(x => x && x.id === b.id) || schedule[11].some(x => x && x.id === b.id);
+    if (aOnWk) base -= 2000;
+    if (bOnWk) base -= 2000;
   }
   return base;
 }
@@ -1178,12 +1185,15 @@ function solveGreedy(active) {
     return Math.random() - 0.5;
   });
 
-  // 슬롯을 하나씩 돌며 2명을 채움
+  // 슬롯을 하나씩 돌며 2명을 채움.
+  // 평일 슬롯에서는 주말에 이미 들어간 인원을 후보에서 제외해 overflow 를 막는다.
+  // (불가피한 경우는 아래 fallback 단계에서 허용)
   for (const slot of slotOrder) {
     while (schedule[slot].filter(Boolean).length < SLOTS_PER_DAY) {
       const cands = active.filter(p =>
         !p.restricted[slot] && canTake(p, slot) &&
-        !schedule[slot].some(x => x && x.id === p.id)
+        !schedule[slot].some(x => x && x.id === p.id) &&
+        (isWeekend(slot) || wkndCounts.get(p.id) === 0)
       );
       if (cands.length === 0) break;
 
