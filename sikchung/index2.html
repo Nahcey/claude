@@ -1041,16 +1041,17 @@ function solveBacktrack(active, timeBudgetMs = 600) {
       return recurse(idx + 1);
     }
 
-    // 가용 인원 1명 → 그 1명만 한 슬롯에 넣고 진행
+    // 가용 인원 1명 → 그 1명만 한 슬롯에 넣고 진행 (실패하면 빈 슬롯으로 fallback)
     if (available.length === 1) {
       const a = available[0];
       schedule[day] = [a, null];
       take(a, day);
-      const r = recurse(idx + 1);
+      let r = recurse(idx + 1);
       if (r === true || r === 'TIMEOUT') return r;
       untake(a, day);
       schedule[day] = [null, null];
-      return false;
+      // fallback: 이 슬롯은 비우고 그대로 진행
+      return recurse(idx + 1);
     }
 
     // 2명 이상 → 모든 쌍을 선호도 내림차순으로 정렬해서 시도
@@ -1076,7 +1077,22 @@ function solveBacktrack(active, timeBudgetMs = 600) {
       untake(a, day); untake(b, day);
       schedule[day] = [null, null];
     }
-    return false;
+
+    // 모든 쌍이 실패한 경우 → 1명만 채우는 fallback
+    for (const a of available) {
+      if (Date.now() - start > timeBudgetMs) return 'TIMEOUT';
+      schedule[day] = [a, null];
+      take(a, day);
+      const r = recurse(idx + 1);
+      if (r === true) return true;
+      if (r === 'TIMEOUT') return 'TIMEOUT';
+      untake(a, day);
+      schedule[day] = [null, null];
+    }
+
+    // 1명도 실패한 경우 → 비워두고 그대로 진행 (미배정 슬롯 수용)
+    schedule[day] = [null, null];
+    return recurse(idx + 1);
   }
 
   const ok = recurse(0);
@@ -1126,21 +1142,17 @@ function compareSchedules(a, b) {
 
 
 function solveGreedy(active) {
-  // 백트래킹 실패 시: 가능한 만큼 채우고 미배정 슬롯/실패 인원 보고.
-  // 인원당 cap = (p.double ? 4 : 2). 주말은 인당 1회 이내. 주말 사람이 평일 슬롯에 가는
-  // 것은 허용하되 마지막 단계에 시도 (soft preference: 주말 인원은 1슬롯에 머무는 게 좋음).
+  // 슬롯-우선 그리디: 가장 제한 많은 슬롯부터 채워 미배정 최소화.
+  // 인원당 cap = (p.double ? 4 : 2). 주말은 인당 1회 이내.
   const isWeekend = idx => idx >= 10;
   const schedule = emptySchedule();
   const counts = new Map(active.map(p => [p.id, 0]));
   const wkndCounts = new Map(active.map(p => [p.id, 0]));
-  const failed = [];
 
   function capOf(p) { return p.double ? 4 : 2; }
   function canTake(p, slotIdx) {
-    const tot = counts.get(p.id);
-    const wk  = wkndCounts.get(p.id);
-    if (tot >= capOf(p)) return false;
-    if (isWeekend(slotIdx) && wk >= 1) return false;
+    if (counts.get(p.id) >= capOf(p)) return false;
+    if (isWeekend(slotIdx) && wkndCounts.get(p.id) >= 1) return false;
     return true;
   }
   function place(p, slotIdx, slotPos) {
@@ -1149,56 +1161,75 @@ function solveGreedy(active) {
     if (isWeekend(slotIdx)) wkndCounts.set(p.id, wkndCounts.get(p.id) + 1);
   }
 
-  // 1) 모든 사람을 1회씩 배정 시도
-  const order = shuffle(active.slice());
-  for (const p of order) {
-    const possible = shuffle(Array.from({length:SLOTS_COUNT},(_,i)=>i).filter(d =>
-      !p.restricted[d] && canTake(p, d) && schedule[d].filter(Boolean).length < SLOTS_PER_DAY
-    ));
-    if (possible.length === 0) {
-      const restrictedAll = p.restricted.every(x => x);
-      failed.push({
-        person: p,
-        reason: restrictedAll ? '모든 시간 슬롯 제한됨' : '가용 슬롯 부족'
+  // 슬롯 순서: 가용 인원 적은 슬롯 먼저 (랜덤 tiebreak)
+  const slotOrder = Array.from({length: SLOTS_COUNT}, (_, i) => i);
+  slotOrder.sort((a, b) => {
+    const ca = active.filter(p => !p.restricted[a]).length;
+    const cb = active.filter(p => !p.restricted[b]).length;
+    if (ca !== cb) return ca - cb;
+    return Math.random() - 0.5;
+  });
+
+  // 슬롯을 하나씩 돌며 2명을 채움
+  for (const slot of slotOrder) {
+    while (schedule[slot].filter(Boolean).length < SLOTS_PER_DAY) {
+      const cands = active.filter(p =>
+        !p.restricted[slot] && canTake(p, slot) &&
+        !schedule[slot].some(x => x && x.id === p.id)
+      );
+      if (cands.length === 0) break;
+
+      // 후보 정렬:
+      //  1) 평일 슬롯이면 주말 미사용자 우선 (주말 overflow 회피)
+      //  2) 같은 요일 아침/저녁 연속성 — 저녁 슬롯이면 아침에 있던 사람 우선
+      //  3) 현재 배정 수 적은 사람 우선 (공정)
+      //  4) 랜덤 tiebreak
+      cands.sort((a, b) => {
+        if (!isWeekend(slot)) {
+          const aWk = wkndCounts.get(a.id) > 0 ? 1 : 0;
+          const bWk = wkndCounts.get(b.id) > 0 ? 1 : 0;
+          if (aWk !== bWk) return aWk - bWk;
+        }
+        if (slot < 10 && (slot % 2) === 1) {
+          const morning = schedule[slot - 1];
+          const aM = morning.some(x => x && x.id === a.id) ? 0 : 1;
+          const bM = morning.some(x => x && x.id === b.id) ? 0 : 1;
+          if (aM !== bM) return aM - bM;
+        }
+        const dc = counts.get(a.id) - counts.get(b.id);
+        if (dc !== 0) return dc;
+        return Math.random() - 0.5;
       });
-      continue;
-    }
-    const day = possible[0];
-    const slotIdx = schedule[day].findIndex(x => x === null);
-    place(p, day, slotIdx);
-  }
 
-  // 2) 평일에만 들어간 인원 우선으로 추가 평일 슬롯 배정 (cap 까지)
-  //    주말 인원의 추가 배정은 다음 단계로 미룸 (soft preference)
-  for (const p of shuffle(active.slice())) {
-    if (wkndCounts.get(p.id) > 0) continue;
-    while (counts.get(p.id) < capOf(p)) {
-      const possible = shuffle(Array.from({length:SLOTS_COUNT},(_,i)=>i).filter(d =>
-        !p.restricted[d] && canTake(p, d) && schedule[d].filter(Boolean).length < SLOTS_PER_DAY &&
-        !schedule[d].some(x => x && x.id === p.id)
-      ));
-      if (possible.length === 0) break;
-      const day = possible[0];
-      const slotIdx = schedule[day].findIndex(x => x === null);
-      place(p, day, slotIdx);
+      const p = cands[0];
+      const pos = schedule[slot].findIndex(x => x === null);
+      place(p, slot, pos);
     }
   }
 
-  // 3) 슬롯이 아직 비어 있다면 주말 인원도 평일 슬롯에 추가 배정 (fallback)
-  for (const p of shuffle(active.slice())) {
-    if (wkndCounts.get(p.id) === 0) continue;
-    while (counts.get(p.id) < capOf(p)) {
-      const possible = shuffle(Array.from({length:SLOTS_COUNT},(_,i)=>i).filter(d =>
-        !isWeekend(d) && !p.restricted[d] && canTake(p, d) &&
-        schedule[d].filter(Boolean).length < SLOTS_PER_DAY &&
+  // 미배정 슬롯이 남아 있으면 주말 인원에게도 평일 추가 배정 (overflow 허용 fallback)
+  for (let d = 0; d < 10; d++) {
+    while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
+      const cands = active.filter(p =>
+        !p.restricted[d] && counts.get(p.id) < capOf(p) &&
         !schedule[d].some(x => x && x.id === p.id)
-      ));
-      if (possible.length === 0) break;
-      const day = possible[0];
-      const slotIdx = schedule[day].findIndex(x => x === null);
-      place(p, day, slotIdx);
+      );
+      if (cands.length === 0) break;
+      cands.sort((a, b) => counts.get(a.id) - counts.get(b.id));
+      const p = cands[0];
+      const pos = schedule[d].findIndex(x => x === null);
+      place(p, d, pos);
     }
   }
+
+  const assignedIds = new Set();
+  for (const day of schedule) for (const p of day) if (p) assignedIds.add(p.id);
+  const failed = active
+    .filter(p => !assignedIds.has(p.id))
+    .map(p => ({
+      person: p,
+      reason: p.restricted.every(x => x) ? '모든 시간 슬롯 제한됨' : '슬롯 우선 채움으로 자리 없음'
+    }));
 
   return { schedule, failed };
 }
@@ -1207,30 +1238,38 @@ function generate() {
   // 1단계: 우선순위 스킵
   const { active, skipped } = applySkipPriority(people);
 
-  // 2단계: 백트래킹을 여러 번 시도. 점수 우선순위는
-  // (1) 채워진 슬롯 수, (2) 배정된 인원 수, (3) 쌍 선호도 합.
+  // 2단계: 백트래킹 다회 시도 (점수 우선순위: filled → -overflow → continuity → people → pref)
   let res = null;
   let bestScore = null;
-  const attempts = 6;
-  const budgetPer = 350;
-  for (let t = 0; t < attempts; t++) {
-    const r = solveBacktrack(active, budgetPer);
-    if (r) {
-      const sc = scoreSchedule(r.schedule);
-      if (!bestScore || compareSchedules(sc, bestScore) < 0) {
-        bestScore = sc;
-        res = r;
-      }
-      // 14 슬롯이 모두 채워졌으면 더 시도 불필요
-      // 완전 채움(24/24) + 월~금 5일 모두 같은 요일 페어(continuity 10) 만족 시 즉시 종료
-      if (sc.filled === TOTAL_SLOTS && sc.continuity === 10) break;
+  const btAttempts = 8;
+  const btBudget = 500;
+  for (let t = 0; t < btAttempts; t++) {
+    const r = solveBacktrack(active, btBudget);
+    if (!r) continue;
+    const sc = scoreSchedule(r.schedule);
+    if (!bestScore || compareSchedules(sc, bestScore) < 0) {
+      bestScore = sc;
+      res = r;
+    }
+    // 완전 채움 + 주말 overflow 0 + continuity 10 (perfect) 면 즉시 종료
+    if (sc.filled === TOTAL_SLOTS && sc.weekendOverflow === 0 && sc.continuity === 10) break;
+  }
+
+  // 3단계: 그리디도 항상 다회 시도해서 더 나은 결과가 있는지 비교
+  //        백트래킹이 부분 답에 갇혀 있을 때 그리디가 빈 슬롯을 더 채워줄 수 있음
+  const grAttempts = 20;
+  for (let t = 0; t < grAttempts; t++) {
+    const gr = solveGreedy(active);
+    const sc = scoreSchedule(gr.schedule);
+    if (!bestScore || compareSchedules(sc, bestScore) < 0) {
+      bestScore = sc;
+      res = { schedule: gr.schedule };
     }
   }
 
-  // 3단계: 백트래킹 자체가 못 끝낸 경우 그리디 폴백
+  // 백트래킹/그리디 모두 결과가 없는 극단적인 케이스 안전망 (사실상 도달하지 않음)
   if (!res) {
-    const gr = solveGreedy(active);
-    res = { schedule: gr.schedule };
+    res = { schedule: emptySchedule() };
   }
 
   // active 중 한 번도 배정되지 못한 인원 = 실패 인원
