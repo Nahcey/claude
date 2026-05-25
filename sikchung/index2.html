@@ -143,6 +143,7 @@ table.schedule td.day-label {
 table.schedule tr.full td { background: #FFFFFF; }
 table.schedule tr.partial td:not(.day-label) { background: #FEF9C3; }
 table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
+table.schedule tr.day-divider td { border-top: 2px solid var(--ink); }
 .person-chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 4px 10px; background: #F3F4F6; color: var(--ink);
@@ -251,7 +252,16 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
 }
 .day-grid {
-  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  display: grid; grid-template-columns: 40px 1fr 1fr; gap: 6px;
+  align-items: center;
+}
+.day-grid .grid-header {
+  font-size: 11px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.6px; text-align: center; font-weight: 600;
+  padding-bottom: 2px;
+}
+.day-grid .day-label-cell {
+  font-weight: 700; font-size: 14px; text-align: center; color: var(--ink);
 }
 .day-toggle {
   padding: 10px 0; border: 1px solid var(--border); background: var(--card);
@@ -262,6 +272,7 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
   background: #FEE2E2; border-color: #FCA5A5; color: var(--red); font-weight: 600;
 }
 .day-toggle:hover:not(.active) { background: var(--bg); }
+.day-toggle.full-week { grid-column: 2 / 4; }
 .inline-toggle {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px; background: var(--bg); border-radius: 10px; cursor: pointer;
@@ -307,7 +318,7 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
   <div class="page-header">
     <div>
       <h1>식당 청소 일정 생성기</h1>
-      <p class="subtitle">월~일 7일간, 매일 2명씩 청소 인원을 자동 배정합니다.</p>
+      <p class="subtitle">월~금 아침·저녁 + 토·일, 각 슬롯에 2명씩 자동 배정합니다.</p>
     </div>
     <div class="updated" id="updatedLabel"></div>
   </div>
@@ -329,7 +340,7 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
 
     <div class="people-grid" id="peopleGrid"></div>
     <p style="font-size:12px; color:var(--muted); margin-top:12px;">
-      인원 칸을 눌러 요일 제한 · 주 2회 · 우선순위를 편집할 수 있습니다.
+      인원 칸을 눌러 시간 슬롯 제한 · 주 2회 · 우선순위를 편집할 수 있습니다.
     </p>
   </div>
 
@@ -342,7 +353,7 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
       </div>
       <div class="modal-body">
         <div class="field">
-          <label class="field-label">불가능한 요일 (눌러서 토글)</label>
+          <label class="field-label">불가능한 시간 슬롯 (눌러서 토글)</label>
           <div class="day-grid" id="modalDays"></div>
         </div>
         <div class="field">
@@ -419,9 +430,24 @@ table.schedule tr.empty   td:not(.day-label) { background: #FEE2E2; }
 // ============================================================
 // 상수 / 유틸
 // ============================================================
-const DAYS = ['월','화','수','목','금','토','일'];
-const SLOTS_PER_DAY = 2;
-const TOTAL_SLOTS = DAYS.length * SLOTS_PER_DAY; // 14
+// 시간 슬롯 — 월~금은 아침/저녁 분리, 토·일은 단일 슬롯 (총 12개)
+const TIME_SLOTS = [
+  { day:'월', shift:'아침', label:'월 아침' },  // 0
+  { day:'월', shift:'저녁', label:'월 저녁' },  // 1
+  { day:'화', shift:'아침', label:'화 아침' },  // 2
+  { day:'화', shift:'저녁', label:'화 저녁' },  // 3
+  { day:'수', shift:'아침', label:'수 아침' },  // 4
+  { day:'수', shift:'저녁', label:'수 저녁' },  // 5
+  { day:'목', shift:'아침', label:'목 아침' },  // 6
+  { day:'목', shift:'저녁', label:'목 저녁' },  // 7
+  { day:'금', shift:'아침', label:'금 아침' },  // 8
+  { day:'금', shift:'저녁', label:'금 저녁' },  // 9
+  { day:'토', shift:null,   label:'토'      },  // 10
+  { day:'일', shift:null,   label:'일'      }   // 11
+];
+const SLOTS_COUNT  = TIME_SLOTS.length;          // 12
+const SLOTS_PER_DAY = 2;                          // 각 시간 슬롯당 인원
+const TOTAL_SLOTS  = SLOTS_COUNT * SLOTS_PER_DAY; // 24
 const DEFAULT_NAMES = [
   '이동민','김기환','정우진','윤민형','한우현',
   '권정훈','정한결','김최원','오승호','박예찬',
@@ -433,13 +459,16 @@ const DEFAULT_GROUPS = {
   '윤민형':'B','한우현':'B','권정훈':'B','정한결':'B','김최원':'B',
   '오승호':'C','박예찬':'C','권기범':'C','최정협':'C','전유찬':'C'
 };
-// 특정 인원의 디폴트 요일 제한 (index: 월=0 … 일=6, true=불가)
+// 특정 인원의 디폴트 시간 슬롯 제한
+// 인덱스 0~9: 월~금 아침/저녁 (각 요일 2칸씩), 10: 토, 11: 일
 const DEFAULT_RESTRICTED = {
-  '윤민형': [true, true, true, true, true, false, false],  // 월~금 제한 (주말만 가능)
-  '정우진': [false, false, false, false, false, false, true] // 일요일 제한
+  // 윤민형: 월~금 아침·저녁 모두 제한 (인덱스 0~9), 토·일은 가능
+  '윤민형': [true,true, true,true, true,true, true,true, true,true, false, false],
+  // 정우진: 일요일만 제한
+  '정우진': [false,false, false,false, false,false, false,false, false,false, false, true]
 };
 function defaultRestrictedFor(name) {
-  return (DEFAULT_RESTRICTED[name] || [false,false,false,false,false,false,false]).slice();
+  return (DEFAULT_RESTRICTED[name] || new Array(SLOTS_COUNT).fill(false)).slice();
 }
 
 let people = []; // {id, name, restricted: bool[7], double: bool, priority: number, group, rookie}
@@ -449,31 +478,55 @@ let lastResult = null; // 마지막으로 생성된 결과 (재생성 시 비교
 // ------------------------------------------------------------
 // localStorage 영속화 — 페이지를 닫아도 인원 설정이 유지됨
 // ------------------------------------------------------------
-const STORAGE_KEY = 'sikchung-people-v1';
+const STORAGE_KEY        = 'sikchung-people-v2';
+const STORAGE_KEY_LEGACY = 'sikchung-people-v1';   // index.html 의 v1 스키마(요일 7칸)
 
 function savePeople() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(people)); }
   catch (e) { /* private mode 등에서 실패하면 조용히 무시 */ }
 }
 
+// 요일 7칸 → 시간 슬롯 12칸 마이그레이션 (월~금은 아침/저녁 모두 같은 값으로 복제)
+function migrateRestricted(r) {
+  if (Array.isArray(r) && r.length === SLOTS_COUNT) return r.map(Boolean);
+  if (Array.isArray(r) && r.length === 7) {
+    return [
+      !!r[0], !!r[0],  // 월
+      !!r[1], !!r[1],  // 화
+      !!r[2], !!r[2],  // 수
+      !!r[3], !!r[3],  // 목
+      !!r[4], !!r[4],  // 금
+      !!r[5],          // 토
+      !!r[6]           // 일
+    ];
+  }
+  return new Array(SLOTS_COUNT).fill(false);
+}
+
+function normalizePerson(p) {
+  return {
+    id: Number(p.id) || uid(),
+    name: String(p.name || ''),
+    restricted: migrateRestricted(p.restricted),
+    double: !!p.double,
+    priority: Number.isFinite(p.priority) ? Math.max(0, Math.min(99, p.priority)) : 0,
+    group: (p.group === 'A' || p.group === 'B' || p.group === 'C') ? p.group : (DEFAULT_GROUPS[p.name] || null),
+    rookie: !!p.rookie
+  };
+}
+
 function loadPeople() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
+    // 1) v2 우선
+    let raw = localStorage.getItem(STORAGE_KEY);
+    let parsed = raw ? JSON.parse(raw) : null;
+    // 2) v2 없으면 v1 에서 1회성 마이그레이션 (index.html 사용 흔적)
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      raw = localStorage.getItem(STORAGE_KEY_LEGACY);
+      parsed = raw ? JSON.parse(raw) : null;
+    }
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    // 누락 필드 보정 — 이전 버전 데이터와의 호환
-    return parsed.map(p => ({
-      id: Number(p.id) || uid(),
-      name: String(p.name || ''),
-      restricted: Array.isArray(p.restricted) && p.restricted.length === 7
-        ? p.restricted.map(Boolean)
-        : [false,false,false,false,false,false,false],
-      double: !!p.double,
-      priority: Number.isFinite(p.priority) ? Math.max(0, Math.min(99, p.priority)) : 0,
-      group: (p.group === 'A' || p.group === 'B' || p.group === 'C') ? p.group : (DEFAULT_GROUPS[p.name] || null),
-      rookie: !!p.rookie
-    }));
+    return parsed.map(normalizePerson);
   } catch (e) { return null; }
 }
 
@@ -545,7 +598,7 @@ function renderPeople() {
     if (resCount > 0) {
       const b = document.createElement('span');
       b.className = 'pc-mini res';
-      b.textContent = `제한 ${resCount}일`;
+      b.textContent = `제한 ${resCount}칸`;
       meta.appendChild(b);
     }
     card.appendChild(meta);
@@ -588,26 +641,54 @@ function openEditor(personId) {
   modalOverlay.classList.add('open');
 }
 
+// 시간 슬롯 토글 1개 생성 (월~금 아침/저녁 또는 토/일 전체)
+function createSlotToggle(slotIdx, text, fullWeek) {
+  const cur = editingPerson();
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'day-toggle' + (cur && cur.restricted[slotIdx] ? ' active' : '') + (fullWeek ? ' full-week' : '');
+  btn.textContent = text;
+  btn.addEventListener('click', () => {
+    const c = editingPerson();
+    if (!c) return;
+    c.restricted[slotIdx] = !c.restricted[slotIdx];
+    btn.classList.toggle('active', c.restricted[slotIdx]);
+    autoSave();
+  });
+  return btn;
+}
+
 // 모달 내부 폼을 현재 인원의 실제 값으로 다시 그림 (초기화/열기에서 공통 사용)
 function renderModalBody() {
   const p = editingPerson();
   if (!p) return;
 
-  // 요일 토글 생성
+  // 그리드: [요일 라벨 | 아침 | 저녁]
   modalDays.innerHTML = '';
-  for (let d = 0; d < 7; d++) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'day-toggle' + (p.restricted[d] ? ' active' : '');
-    btn.textContent = DAYS[d];
-    btn.addEventListener('click', () => {
-      const cur = editingPerson();
-      if (!cur) return;
-      cur.restricted[d] = !cur.restricted[d];
-      btn.classList.toggle('active', cur.restricted[d]);
-      autoSave();
-    });
-    modalDays.appendChild(btn);
+  // 헤더 행
+  modalDays.appendChild(document.createElement('div'));
+  const hM = document.createElement('div'); hM.className = 'grid-header'; hM.textContent = '아침';
+  const hE = document.createElement('div'); hE.className = 'grid-header'; hE.textContent = '저녁';
+  modalDays.appendChild(hM);
+  modalDays.appendChild(hE);
+  // 월~금 (5행, 각 행에 아침/저녁 두 칸)
+  for (let i = 0; i < 5; i++) {
+    const morningIdx = i * 2;
+    const eveningIdx = i * 2 + 1;
+    const label = document.createElement('div');
+    label.className = 'day-label-cell';
+    label.textContent = TIME_SLOTS[morningIdx].day;
+    modalDays.appendChild(label);
+    modalDays.appendChild(createSlotToggle(morningIdx, '아침', false));
+    modalDays.appendChild(createSlotToggle(eveningIdx, '저녁', false));
+  }
+  // 토·일 (각 행에 단일 버튼)
+  for (let i = 10; i < SLOTS_COUNT; i++) {
+    const label = document.createElement('div');
+    label.className = 'day-label-cell';
+    label.textContent = TIME_SLOTS[i].day;
+    modalDays.appendChild(label);
+    modalDays.appendChild(createSlotToggle(i, '하루 전체', true));
   }
 
   // 스위치 및 입력 동기화
@@ -667,10 +748,10 @@ $('modalDelete').addEventListener('click', () => {
 $('modalReset').addEventListener('click', () => {
   const p = editingPerson();
   if (!p) return;
-  if (!confirm('이 인원의 설정(제한 요일 · 주 2회 · 우선순위 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
+  if (!confirm('이 인원의 설정(제한 시간 슬롯 · 주 2회 · 우선순위 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
   const defaultIdx = DEFAULT_NAMES.indexOf(p.name);
   const defaultPriority = defaultIdx >= 0 ? (DEFAULT_NAMES.length - defaultIdx) : 0;
-  p.restricted = defaultRestrictedFor(p.name);
+  p.restricted = defaultRestrictedFor(p.name); // 12칸 배열
   p.double = false;
   p.priority = defaultPriority;
   p.rookie = false;
@@ -706,10 +787,10 @@ function updateStatus() {
   st.classList.remove('green','yellow','red');
   if (cap < TOTAL_SLOTS) {
     st.classList.add('red');
-    stText.innerHTML = `최대 가능 배정 횟수가 ${cap}회입니다. 14 슬롯을 모두 채울 수 없습니다. (인원/주 2회 추가 필요)`;
+    stText.innerHTML = `최대 가능 배정 횟수가 ${cap}회입니다. ${TOTAL_SLOTS} 슬롯을 모두 채울 수 없습니다. (인원/주 2회 추가 필요)`;
   } else if (cap === TOTAL_SLOTS) {
     st.classList.add('yellow');
-    stText.innerHTML = `최대 가능 배정 횟수가 정확히 14회입니다. 모든 "주 2회" 사용 시에만 가능.`;
+    stText.innerHTML = `최대 가능 배정 횟수가 정확히 ${TOTAL_SLOTS}회입니다. 모든 "주 2회" 사용 시에만 가능.`;
   } else {
     st.classList.add('green');
     stText.innerHTML = `충분한 인원이 확보되었습니다. 일정을 생성하세요.`;
@@ -739,7 +820,7 @@ $('addBtn').addEventListener('click', () => {
   people.push({
     id: uid(),
     name,
-    restricted: defaultRestrictedFor(name),
+    restricted: defaultRestrictedFor(name), // 12칸 배열
     double: false,
     priority: 0,
     group: DEFAULT_GROUPS[name] || null,
@@ -799,7 +880,7 @@ function applySkipPriority(input) {
 // 일정 생성 — 백트래킹 + 그리디 폴백
 // ============================================================
 function emptySchedule() {
-  return Array.from({ length: 7 }, () => [null, null]);
+  return Array.from({ length: SLOTS_COUNT }, () => [null, null]);
 }
 
 // 쌍 (a,b)의 선호도 점수. 높을수록 우선.
@@ -834,9 +915,9 @@ function solveBacktrack(active, timeBudgetMs = 600) {
   const counts = new Map(active.map(p => [p.id, 0]));
   const start = Date.now();
 
-  // 가장 제한이 많은 (배정 가능 인원이 적은) 요일 먼저 시도 — 휴리스틱
-  const days = [0,1,2,3,4,5,6];
-  const dayOrder = days.slice().sort((a, b) => {
+  // 가장 제한이 많은 (배정 가능 인원이 적은) 시간 슬롯 먼저 시도 — 휴리스틱
+  const slots = Array.from({ length: SLOTS_COUNT }, (_, i) => i);
+  const dayOrder = slots.slice().sort((a, b) => {
     const ca = active.filter(p => !p.restricted[a]).length;
     const cb = active.filter(p => !p.restricted[b]).length;
     return ca - cb;
@@ -930,14 +1011,14 @@ function solveGreedy(active) {
   // 1) 모든 사람을 1회씩 배정 시도
   const order = shuffle(active.slice());
   for (const p of order) {
-    const possible = shuffle([0,1,2,3,4,5,6].filter(d =>
+    const possible = shuffle(Array.from({length:SLOTS_COUNT},(_,i)=>i).filter(d =>
       !p.restricted[d] && schedule[d].filter(Boolean).length < SLOTS_PER_DAY
     ));
     if (possible.length === 0) {
       const restrictedAll = p.restricted.every(x => x);
       failed.push({
         person: p,
-        reason: restrictedAll ? '모든 요일 제한됨' : '가용 슬롯 부족'
+        reason: restrictedAll ? '모든 시간 슬롯 제한됨' : '가용 슬롯 부족'
       });
       continue;
     }
@@ -951,7 +1032,7 @@ function solveGreedy(active) {
   for (const p of shuffle(active.slice())) {
     if (!p.double || counts.get(p.id) !== 1) continue;
     const assignedDay = schedule.findIndex(slot => slot.some(x => x && x.id === p.id));
-    const possible = shuffle([0,1,2,3,4,5,6].filter(d =>
+    const possible = shuffle(Array.from({length:SLOTS_COUNT},(_,i)=>i).filter(d =>
       d !== assignedDay && !p.restricted[d] &&
       schedule[d].filter(Boolean).length < SLOTS_PER_DAY
     ));
@@ -1004,7 +1085,7 @@ function generate() {
       const allRestricted = p.restricted.every(x => x);
       return {
         person: p,
-        reason: allRestricted ? '모든 요일 제한됨' : '슬롯 우선 채움으로 자리 없음'
+        reason: allRestricted ? '모든 시간 슬롯 제한됨' : '슬롯 우선 채움으로 자리 없음'
       };
     });
 
@@ -1046,7 +1127,8 @@ function renderResult(r) {
   const body = $('scheduleBody');
   body.innerHTML = '';
 
-  for (let d = 0; d < 7; d++) {
+  let prevDay = null;
+  for (let d = 0; d < SLOTS_COUNT; d++) {
     const tr = document.createElement('tr');
     const slot = r.schedule[d];
     const filled = slot.filter(Boolean).length;
@@ -1054,9 +1136,14 @@ function renderResult(r) {
     else if (filled < SLOTS_PER_DAY) tr.className = 'partial';
     else                     tr.className = 'full';
 
+    const ts = TIME_SLOTS[d];
+    // 새 요일이 시작될 때 굵은 구분선을 위에 추가
+    if (prevDay !== null && ts.day !== prevDay) tr.classList.add('day-divider');
+    prevDay = ts.day;
+
     const dayTd = document.createElement('td');
     dayTd.className = 'day-label';
-    dayTd.textContent = DAYS[d] + '요일';
+    dayTd.textContent = ts.label;
     tr.appendChild(dayTd);
 
     for (let s = 0; s < SLOTS_PER_DAY; s++) {
