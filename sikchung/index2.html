@@ -981,13 +981,20 @@ function pairPreference(a, b) {
 // 모든 평일 슬롯에서 — 이미 주말에 들어간 인원이 페어에 있으면 큰 페널티 (overflow 최후 수단).
 function pairPreferenceForSlot(a, b, slotIdx, schedule) {
   let base = pairPreference(a, b);
-  // 월~금 (인덱스 0~9) 중 저녁 (홀수 인덱스) 만 연속성 보너스
+  // 평일 아침 (짝수 인덱스 < 10): 페어 멤버가 같은 요일 저녁도 가능하면 보너스
+  // → 한 인원이 한 요일의 두 슬롯을 함께 잡도록 적극 유도
+  if (slotIdx < 10 && (slotIdx % 2) === 0) {
+    const eIdx = slotIdx + 1;
+    if (!a.restricted[eIdx]) base += 300;
+    if (!b.restricted[eIdx]) base += 300;
+  }
+  // 평일 저녁 (홀수 인덱스 < 10): 같은 요일 아침에 들어간 인원과 일치하면 큰 가산점
   if (slotIdx < 10 && (slotIdx % 2) === 1) {
     const morning = schedule[slotIdx - 1];
     if (morning) {
       const mIds = morning.filter(Boolean).map(p => p.id);
       const matchCount = (mIds.includes(a.id) ? 1 : 0) + (mIds.includes(b.id) ? 1 : 0);
-      base += matchCount * 500; // 두 명 일치 → +1000, 한 명 → +500
+      base += matchCount * 800; // 두 명 일치 → +1600, 한 명 → +800 (이전 500 보다 강화)
     }
   }
   // 모든 평일 슬롯: 페어 인원 중 이미 주말에 배정된 사람이 있으면 강한 페널티
@@ -1160,8 +1167,11 @@ function compareSchedules(a, b) {
 
 
 function solveGreedy(active) {
-  // 슬롯-우선 그리디: 가장 제한 많은 슬롯부터 채워 미배정 최소화.
-  // 인원당 cap = (p.double ? 4 : 2). 주말은 인당 1회 이내.
+  // 그리디 — 한 요일의 아침/저녁을 같은 인원이 책임지는 것이 1순위.
+  // Phase 1: 평일 day 를 atomic 단위로 처리 (2명 × 2슬롯 = 4 person-slot)
+  // Phase 2: 남은 평일 슬롯을 슬롯 단위로 보완 (atomic 으로 못 채운 부분)
+  // Phase 3: 주말 슬롯
+  // Phase 4: last-resort fallback (주말 인원 평일 overflow)
   const isWeekend = idx => idx >= 10;
   const schedule = emptySchedule();
   const counts = new Map(active.map(p => [p.id, 0]));
@@ -1179,40 +1189,53 @@ function solveGreedy(active) {
     if (isWeekend(slotIdx)) wkndCounts.set(p.id, wkndCounts.get(p.id) + 1);
   }
 
-  // 슬롯 순서: 가용 인원 적은 슬롯 먼저 (랜덤 tiebreak)
-  const slotOrder = Array.from({length: SLOTS_COUNT}, (_, i) => i);
-  slotOrder.sort((a, b) => {
-    const ca = active.filter(p => !p.restricted[a]).length;
-    const cb = active.filter(p => !p.restricted[b]).length;
+  // ---- Phase 1: 평일 atomic 배정 ----
+  // 각 평일을 1개 unit 으로 보고, 2명을 골라 그 요일의 morning + evening 모두 동일 인원이
+  // 들어가게 한다. 가용 인원(양쪽 다 가능 + cap 2 이상 남음)이 적은 요일부터 처리.
+  const weekdayOrder = [0, 1, 2, 3, 4];
+  weekdayOrder.sort((a, b) => {
+    const ca = active.filter(p => !p.restricted[a*2] && !p.restricted[a*2+1]).length;
+    const cb = active.filter(p => !p.restricted[b*2] && !p.restricted[b*2+1]).length;
     if (ca !== cb) return ca - cb;
     return Math.random() - 0.5;
   });
+  for (const dayIdx of weekdayOrder) {
+    const mIdx = dayIdx * 2, eIdx = dayIdx * 2 + 1;
+    // 양쪽 슬롯 모두 가능 + 남은 cap 2 이상 + 주말 미사용자
+    const both = active.filter(p =>
+      !p.restricted[mIdx] && !p.restricted[eIdx] &&
+      capOf(p) - counts.get(p.id) >= 2 &&
+      wkndCounts.get(p.id) === 0
+    );
+    both.sort((a, b) => {
+      const dc = counts.get(a.id) - counts.get(b.id);
+      if (dc !== 0) return dc;
+      return Math.random() - 0.5;
+    });
+    // 위에서 2명을 골라 morning + evening 양쪽에 동일하게 배정
+    for (let pos = 0; pos < 2; pos++) {
+      const p = both[pos];
+      if (!p) break;
+      place(p, mIdx, pos);
+      place(p, eIdx, pos);
+    }
+  }
 
-  // 슬롯을 하나씩 돌며 2명을 채움.
-  // 평일 슬롯에서는 주말에 이미 들어간 인원을 후보에서 제외해 overflow 를 막는다.
-  // (불가피한 경우는 아래 fallback 단계에서 허용)
-  for (const slot of slotOrder) {
-    while (schedule[slot].filter(Boolean).length < SLOTS_PER_DAY) {
+  // ---- Phase 2: atomic 으로 못 채운 평일 슬롯 보완 ----
+  // 일부 요일은 양쪽 다 가능한 인원이 부족해서 atomic 으로 2명을 못 채울 수 있다.
+  // 슬롯 단위로 한 명씩 채운다 (주말 인원 제외).
+  for (let d = 0; d < 10; d++) {
+    while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
       const cands = active.filter(p =>
-        !p.restricted[slot] && canTake(p, slot) &&
-        !schedule[slot].some(x => x && x.id === p.id) &&
-        (isWeekend(slot) || wkndCounts.get(p.id) === 0)
+        !p.restricted[d] && canTake(p, d) &&
+        !schedule[d].some(x => x && x.id === p.id) &&
+        wkndCounts.get(p.id) === 0
       );
       if (cands.length === 0) break;
-
-      // 후보 정렬:
-      //  1) 평일 슬롯이면 주말 미사용자 우선 (주말 overflow 회피)
-      //  2) 같은 요일 아침/저녁 연속성 — 저녁 슬롯이면 아침에 있던 사람 우선
-      //  3) 현재 배정 수 적은 사람 우선 (공정)
-      //  4) 랜덤 tiebreak
       cands.sort((a, b) => {
-        if (!isWeekend(slot)) {
-          const aWk = wkndCounts.get(a.id) > 0 ? 1 : 0;
-          const bWk = wkndCounts.get(b.id) > 0 ? 1 : 0;
-          if (aWk !== bWk) return aWk - bWk;
-        }
-        if (slot < 10 && (slot % 2) === 1) {
-          const morning = schedule[slot - 1];
+        // 같은 요일 아침/저녁 연속성 — 저녁 슬롯이면 그날 아침에 있던 사람 우선
+        if (d < 10 && (d % 2) === 1) {
+          const morning = schedule[d - 1];
           const aM = morning.some(x => x && x.id === a.id) ? 0 : 1;
           const bM = morning.some(x => x && x.id === b.id) ? 0 : 1;
           if (aM !== bM) return aM - bM;
@@ -1221,14 +1244,28 @@ function solveGreedy(active) {
         if (dc !== 0) return dc;
         return Math.random() - 0.5;
       });
-
       const p = cands[0];
-      const pos = schedule[slot].findIndex(x => x === null);
-      place(p, slot, pos);
+      const pos = schedule[d].findIndex(x => x === null);
+      place(p, d, pos);
     }
   }
 
-  // 미배정 슬롯이 남아 있으면 주말 인원에게도 평일 추가 배정 (overflow 허용 fallback)
+  // ---- Phase 3: 주말 슬롯 ----
+  for (let d = 10; d < SLOTS_COUNT; d++) {
+    while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
+      const cands = active.filter(p =>
+        !p.restricted[d] && canTake(p, d) &&
+        !schedule[d].some(x => x && x.id === p.id)
+      );
+      if (cands.length === 0) break;
+      cands.sort((a, b) => counts.get(a.id) - counts.get(b.id));
+      const p = cands[0];
+      const pos = schedule[d].findIndex(x => x === null);
+      place(p, d, pos);
+    }
+  }
+
+  // ---- Phase 4: 미배정 슬롯이 남아 있으면 주말 인원도 평일 추가 배정 (last resort) ----
   for (let d = 0; d < 10; d++) {
     while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
       const cands = active.filter(p =>
