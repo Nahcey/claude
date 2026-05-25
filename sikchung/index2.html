@@ -1286,6 +1286,18 @@ function renderResult(r) {
   const body = $('scheduleBody');
   body.innerHTML = '';
 
+  // 평일 아침/저녁에 같은 사람이 들어가 있으면 칼럼 순서를 아침과 동일하게 맞춤.
+  // (백트래킹이 (a,b)를 i<j 루프로 만들어서 같은 페어라도 슬롯 위치가 뒤집힐 수 있음)
+  for (let i = 0; i < 10; i += 2) {
+    const m = r.schedule[i];
+    const e = r.schedule[i+1];
+    if (!m[0] || !e[0] || !e[1]) continue;
+    // morning[0] 의 사람이 evening[1] 에 있고 evening[0] 에는 없으면 evening 두 슬롯을 swap
+    if (e[0].id !== m[0].id && e[1].id === m[0].id) {
+      [e[0], e[1]] = [e[1], e[0]];
+    }
+  }
+
   // 주말 인원 → 그가 들어간 주말 day 라벨 매핑 ("토"/"일" 또는 "토일")
   // 평일 슬롯 chip 에 "+토" 같은 작은 배지를 붙여 주말 겸직임을 표시한다.
   const weekendCrossover = new Map(); // id → "토"/"일"/"토일"
