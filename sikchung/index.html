@@ -790,16 +790,9 @@ function pairPreference(a, b) {
   return 0;
 }
 
-// 일정 전체 선호도 합산 (다중 시도 중 최고점 선택용)
-function totalPreference(schedule) {
-  let s = 0;
-  for (const day of schedule) {
-    if (day[0] && day[1]) s += pairPreference(day[0], day[1]);
-  }
-  return s;
-}
-
-// 같은 그룹 쌍을 우선적으로 시도하도록 정렬 + 백트래킹
+// 같은 그룹 쌍을 우선적으로 시도 + 슬롯 최대 채움 백트래킹.
+// "모든 인원 ≥1 배정" 같은 공정성 제약은 두지 않음 — 빈 슬롯 최소가 1순위.
+// 가용 인원이 1명뿐인 요일은 한 슬롯만 채우고 다음 요일로 진행, 0명이면 둘 다 비움.
 function solveBacktrack(active, timeBudgetMs = 600) {
   const maxAssign = p => p.double ? 2 : 1;
   const schedule = emptySchedule();
@@ -816,24 +809,38 @@ function solveBacktrack(active, timeBudgetMs = 600) {
 
   function recurse(idx) {
     if (Date.now() - start > timeBudgetMs) return 'TIMEOUT';
-    if (idx === dayOrder.length) {
-      for (const p of active) if (counts.get(p.id) < 1) return false;
-      return true;
-    }
+    if (idx === dayOrder.length) return true;
+
     const day = dayOrder[idx];
     const available = shuffle(active.filter(p =>
       !p.restricted[day] && counts.get(p.id) < maxAssign(p)
     ));
-    if (available.length < SLOTS_PER_DAY) return false;
 
-    // 가능한 모든 (a, b) 쌍을 만들고 같은 그룹 쌍을 먼저 시도
+    // 가용 인원 0명 → 양쪽 슬롯 미배정으로 두고 진행
+    if (available.length === 0) {
+      schedule[day] = [null, null];
+      return recurse(idx + 1);
+    }
+
+    // 가용 인원 1명 → 그 1명만 한 슬롯에 넣고 진행
+    if (available.length === 1) {
+      const a = available[0];
+      schedule[day] = [a, null];
+      counts.set(a.id, counts.get(a.id) + 1);
+      const r = recurse(idx + 1);
+      if (r === true || r === 'TIMEOUT') return r;
+      counts.set(a.id, counts.get(a.id) - 1);
+      schedule[day] = [null, null];
+      return false;
+    }
+
+    // 2명 이상 → 모든 쌍을 선호도 내림차순으로 정렬해서 시도
     const pairs = [];
     for (let i = 0; i < available.length; i++) {
       for (let j = i + 1; j < available.length; j++) {
         pairs.push([available[i], available[j]]);
       }
     }
-    // 선호도 내림차순 — 신병+A/B → 같은 그룹 → 신병+C → 그 외
     pairs.sort((p1, p2) => pairPreference(p2[0], p2[1]) - pairPreference(p1[0], p1[1]));
 
     for (const [a, b] of pairs) {
@@ -853,8 +860,28 @@ function solveBacktrack(active, timeBudgetMs = 600) {
   }
 
   const ok = recurse(0);
-  if (ok === true) return { schedule, complete: true };
-  return null;
+  if (ok === 'TIMEOUT') return null;
+  return { schedule };
+}
+
+// 일정 점수 — 비교 우선순위:
+//   1) 채워진 슬롯 수 (높을수록 좋음, "미배정 슬롯 최소" = 1순위)
+//   2) 한 번이라도 배정된 인원 수 (높을수록 공정)
+//   3) 쌍 선호도 합 (신병/같은그룹)
+function scoreSchedule(schedule) {
+  let filled = 0;
+  const idSet = new Set();
+  let pref = 0;
+  for (const day of schedule) {
+    for (const p of day) if (p) { filled++; idSet.add(p.id); }
+    if (day[0] && day[1]) pref += pairPreference(day[0], day[1]);
+  }
+  return { filled, people: idSet.size, pref };
+}
+function compareSchedules(a, b) {
+  if (a.filled !== b.filled) return b.filled - a.filled;
+  if (a.people !== b.people) return b.people - a.people;
+  return b.pref - a.pref;
 }
 
 
@@ -901,32 +928,50 @@ function solveGreedy(active) {
     }
   }
 
-  return { schedule, complete: false, failed };
+  return { schedule, failed };
 }
 
 function generate() {
   // 1단계: 우선순위 스킵
   const { active, skipped } = applySkipPriority(people);
 
-  // 2단계: 백트래킹을 여러 번 시도해서 그룹 응집도가 가장 높은 결과 채택
+  // 2단계: 백트래킹을 여러 번 시도. 점수 우선순위는
+  // (1) 채워진 슬롯 수, (2) 배정된 인원 수, (3) 쌍 선호도 합.
   let res = null;
-  let bestScore = -1;
+  let bestScore = null;
   const attempts = 6;
   const budgetPer = 350;
   for (let t = 0; t < attempts; t++) {
     const r = solveBacktrack(active, budgetPer);
-    if (r && r.complete) {
-      const sc = totalPreference(r.schedule);
-      if (sc > bestScore) { bestScore = sc; res = r; }
+    if (r) {
+      const sc = scoreSchedule(r.schedule);
+      if (!bestScore || compareSchedules(sc, bestScore) < 0) {
+        bestScore = sc;
+        res = r;
+      }
+      // 14 슬롯이 모두 채워졌으면 더 시도 불필요
+      if (sc.filled === TOTAL_SLOTS && sc.people === active.length) break;
     }
   }
-  let failed = [];
 
+  // 3단계: 백트래킹 자체가 못 끝낸 경우 그리디 폴백
   if (!res) {
     const gr = solveGreedy(active);
-    res = { schedule: gr.schedule, complete: false };
-    failed = gr.failed;
+    res = { schedule: gr.schedule };
   }
+
+  // active 중 한 번도 배정되지 못한 인원 = 실패 인원
+  const assignedIds = new Set();
+  for (const day of res.schedule) for (const p of day) if (p) assignedIds.add(p.id);
+  const failed = active
+    .filter(p => !assignedIds.has(p.id))
+    .map(p => {
+      const allRestricted = p.restricted.every(x => x);
+      return {
+        person: p,
+        reason: allRestricted ? '모든 요일 제한됨' : '슬롯 우선 채움으로 자리 없음'
+      };
+    });
 
   // 3단계: 결과 통계
   let fullDays = 0, emptySlots = 0;
@@ -947,7 +992,6 @@ function generate() {
 
   lastResult = {
     schedule: res.schedule,
-    complete: res.complete,
     skipped,
     failed,
     fullDays,
