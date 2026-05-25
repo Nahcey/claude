@@ -1004,6 +1004,11 @@ function pairPreferenceForSlot(a, b, slotIdx, schedule) {
     if (aOnWk) base -= 2000;
     if (bOnWk) base -= 2000;
   }
+  // 주말 슬롯: 주 2회 ON 인원 우선
+  if (slotIdx >= 10) {
+    if (a.double) base += 50;
+    if (b.double) base += 50;
+  }
   return base;
 }
 
@@ -1250,7 +1255,7 @@ function solveGreedy(active) {
     }
   }
 
-  // ---- Phase 3: 주말 슬롯 ----
+  // ---- Phase 3: 주말 슬롯 — 주 2회 ON 인원 우선 배치 ----
   for (let d = 10; d < SLOTS_COUNT; d++) {
     while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
       const cands = active.filter(p =>
@@ -1258,7 +1263,14 @@ function solveGreedy(active) {
         !schedule[d].some(x => x && x.id === p.id)
       );
       if (cands.length === 0) break;
-      cands.sort((a, b) => counts.get(a.id) - counts.get(b.id));
+      cands.sort((a, b) => {
+        // 주 2회 ON 우선
+        const ad = a.double ? 0 : 1, bd = b.double ? 0 : 1;
+        if (ad !== bd) return ad - bd;
+        const dc = counts.get(a.id) - counts.get(b.id);
+        if (dc !== 0) return dc;
+        return Math.random() - 0.5;
+      });
       const p = cands[0];
       const pos = schedule[d].findIndex(x => x === null);
       place(p, d, pos);
