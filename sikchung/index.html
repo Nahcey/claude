@@ -435,8 +435,7 @@ const DEFAULT_GROUPS = {
 };
 // 특정 인원의 디폴트 요일 제한 (index: 월=0 … 일=6, true=불가)
 const DEFAULT_RESTRICTED = {
-  '윤민형': [true, true, true, true, true, false, false],  // 월~금 제한 (주말만 가능)
-  '정우진': [false, false, false, false, false, false, true] // 일요일 제한
+  '윤민형': [true, true, true, true, true, false, false]  // 월~금 제한 (주말만 가능)
 };
 function defaultRestrictedFor(name) {
   return (DEFAULT_RESTRICTED[name] || [false,false,false,false,false,false,false]).slice();
