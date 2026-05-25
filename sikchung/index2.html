@@ -463,9 +463,7 @@ const DEFAULT_GROUPS = {
 // 인덱스 0~9: 월~금 아침/저녁 (각 요일 2칸씩), 10: 토, 11: 일
 const DEFAULT_RESTRICTED = {
   // 윤민형: 월~금 아침·저녁 모두 제한 (인덱스 0~9), 토·일은 가능
-  '윤민형': [true,true, true,true, true,true, true,true, true,true, false, false],
-  // 정우진: 일요일만 제한
-  '정우진': [false,false, false,false, false,false, false,false, false,false, false, true]
+  '윤민형': [true,true, true,true, true,true, true,true, true,true, false, false]
 };
 function defaultRestrictedFor(name) {
   return (DEFAULT_RESTRICTED[name] || new Array(SLOTS_COUNT).fill(false)).slice();
