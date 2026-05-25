@@ -127,7 +127,8 @@ table.people input[type="number"] {
 
 /* Result table */
 table.schedule {
-  width: 100%; border-collapse: separate; border-spacing: 0;
+  width: 100%; min-width: 480px;
+  border-collapse: separate; border-spacing: 0;
   font-size: 14px; margin-top: 4px;
 }
 table.schedule th, table.schedule td {
@@ -149,16 +150,19 @@ table.schedule tr.day-divider td { border-top: 2px solid var(--ink); }
   padding: 4px 10px; background: #F3F4F6; color: var(--ink);
   border-radius: 999px; font-size: 13px; font-weight: 500;
   margin: 2px;
+  white-space: nowrap; word-break: keep-all;
+  flex-shrink: 0;
 }
+.person-chip > * { flex-shrink: 0; }
 .badge-2x {
   display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 700;
   background: var(--accent); color: white; border-radius: 4px;
-  margin-left: 4px;
+  margin-left: 4px; white-space: nowrap;
 }
 .badge-weekend-cross {
   display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 700;
   background: #E9D5FF; color: #6B21A8; border-radius: 4px;
-  margin-left: 4px;
+  margin-left: 4px; white-space: nowrap;
 }
 .badge-skip {
   display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 600;
@@ -406,16 +410,18 @@ table.schedule tr.day-divider td { border-top: 2px solid var(--ink); }
   <div id="result" style="display:none;">
     <div class="card">
       <h2>주간 청소 일정</h2>
-      <table class="schedule">
-        <thead>
-          <tr>
-            <th>요일</th>
-            <th>담당 1</th>
-            <th>담당 2</th>
-          </tr>
-        </thead>
-        <tbody id="scheduleBody"></tbody>
-      </table>
+      <div class="table-wrap">
+        <table class="schedule">
+          <thead>
+            <tr>
+              <th>요일</th>
+              <th>담당 1</th>
+              <th>담당 2</th>
+            </tr>
+          </thead>
+          <tbody id="scheduleBody"></tbody>
+        </table>
+      </div>
 
       <div class="summary" id="summary"></div>
       <div id="exclusionList"></div>
