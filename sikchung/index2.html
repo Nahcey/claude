@@ -1132,10 +1132,11 @@ function solveBacktrack(active, timeBudgetMs = 600) {
 
 // 일정 점수 — 비교 우선순위:
 //   1) 채워진 슬롯 수 (높을수록 좋음, "미배정 슬롯 최소" = 1순위)
-//   2) 주말 인원 overflow 최소 (주말 1슬롯 인원이 평일에도 들어간 슬롯 수)
-//   3) 같은 요일 아침↔저녁 연속성
-//   4) 한 번이라도 배정된 인원 수
-//   5) 쌍 선호도 합 (신병/같은그룹)
+//   2) 평일에 1슬롯만 들어간 인원 수 (적을수록 좋음 — atomic 페어가 우선)
+//   3) 주말 인원 overflow 최소
+//   4) 같은 요일 아침↔저녁 연속성
+//   5) 한 번이라도 배정된 인원 수
+//   6) 쌍 선호도 합 (신병/같은그룹)
 function scoreSchedule(schedule) {
   let filled = 0;
   const idSet = new Set();
@@ -1151,7 +1152,16 @@ function scoreSchedule(schedule) {
     const e = schedule[i+1].filter(Boolean).map(p => p.id);
     for (const id of m) if (e.includes(id)) continuity++;
   }
-  // 주말 overflow: 주말 슬롯에 들어간 인원이 그 외 슬롯에도 들어간 총 개수
+  // 평일 1슬롯만 가진 인원 수 (atomic 깨진 인원)
+  const wkdayCount = new Map();
+  for (let i = 0; i < 10; i++) {
+    for (const p of schedule[i]) if (p) {
+      wkdayCount.set(p.id, (wkdayCount.get(p.id) || 0) + 1);
+    }
+  }
+  let weekdayLone = 0;
+  for (const n of wkdayCount.values()) if (n === 1) weekdayLone++;
+  // 주말 overflow (mutual exclusion 으로 이론상 항상 0이지만 score 유지를 위해 계산)
   const weekendIds = new Set();
   for (let i = 10; i < SLOTS_COUNT; i++) {
     for (const p of schedule[i]) if (p) weekendIds.add(p.id);
@@ -1160,10 +1170,11 @@ function scoreSchedule(schedule) {
   for (let i = 0; i < 10; i++) {
     for (const p of schedule[i]) if (p && weekendIds.has(p.id)) weekendOverflow++;
   }
-  return { filled, weekendOverflow, continuity, people: idSet.size, pref };
+  return { filled, weekdayLone, weekendOverflow, continuity, people: idSet.size, pref };
 }
 function compareSchedules(a, b) {
   if (a.filled !== b.filled) return b.filled - a.filled;
+  if (a.weekdayLone !== b.weekdayLone) return a.weekdayLone - b.weekdayLone;
   if (a.weekendOverflow !== b.weekendOverflow) return a.weekendOverflow - b.weekendOverflow;
   if (a.continuity !== b.continuity) return b.continuity - a.continuity;
   if (a.people !== b.people) return b.people - a.people;
@@ -1241,8 +1252,35 @@ function solveGreedy(active) {
   }
 
   // ---- Phase 2: atomic 으로 못 채운 평일 슬롯 보완 ----
-  // 일부 요일은 양쪽 다 가능한 인원이 부족해서 atomic 으로 2명을 못 채울 수 있다.
-  // 슬롯 단위로 한 명씩 채운다 (주말 인원 제외).
+  // 2-1) 같은 요일에 양쪽 슬롯이 모두 비어 있으면 한 명을 골라 두 슬롯 모두에 배정 (atomic).
+  for (let dayIdx = 0; dayIdx < 5; dayIdx++) {
+    const mIdx = dayIdx * 2, eIdx = dayIdx * 2 + 1;
+    while (
+      schedule[mIdx].findIndex(x => x === null) >= 0 &&
+      schedule[eIdx].findIndex(x => x === null) >= 0
+    ) {
+      const cands = active.filter(p =>
+        !p.restricted[mIdx] && !p.restricted[eIdx] &&
+        capOf(p) - counts.get(p.id) >= 2 &&
+        wkndCounts.get(p.id) === 0 &&
+        !schedule[mIdx].some(x => x && x.id === p.id) &&
+        !schedule[eIdx].some(x => x && x.id === p.id)
+      );
+      if (cands.length === 0) break;
+      cands.sort((a, b) => {
+        const dc = counts.get(a.id) - counts.get(b.id);
+        if (dc !== 0) return dc;
+        return Math.random() - 0.5;
+      });
+      const p = cands[0];
+      const mPos = schedule[mIdx].findIndex(x => x === null);
+      const ePos = schedule[eIdx].findIndex(x => x === null);
+      place(p, mIdx, mPos);
+      place(p, eIdx, ePos);
+    }
+  }
+  // 2-2) atomic 으로도 못 채운 단일 슬롯 — single fill 은 평일 1슬롯 인원을 만드는
+  //      부작용이 있으므로 마지막 보완 단계로만 수행 (canTake + 주말인원 제외).
   for (let d = 0; d < 10; d++) {
     while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
       const cands = active.filter(p =>
@@ -1252,7 +1290,6 @@ function solveGreedy(active) {
       );
       if (cands.length === 0) break;
       cands.sort((a, b) => {
-        // 같은 요일 아침/저녁 연속성 — 저녁 슬롯이면 그날 아침에 있던 사람 우선
         if (d < 10 && (d % 2) === 1) {
           const morning = schedule[d - 1];
           const aM = morning.some(x => x && x.id === a.id) ? 0 : 1;
