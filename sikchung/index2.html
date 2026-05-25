@@ -1023,13 +1023,19 @@ function solveBacktrack(active, timeBudgetMs = 600) {
 
   // 하드 제약:
   //   - 인원당 총 slot 수가 (p.double ? 4 : 2) 미만
-  //   - 주말에 한 번이라도 들어간 사람은 그 주 다른 어떤 슬롯도 못 들어감 (주말 = 1슬롯 전용)
+  //   - 한 사람은 주말 OR 평일 중 하나만 (mutual exclusion)
+  //     · 주말 슬롯 후보: 그 주에 어떤 슬롯도 없는 사람만 (counts === 0)
+  //     · 평일 슬롯 후보: 주말 슬롯에 들어가지 않은 사람만 (wkndCounts === 0)
   function canTake(p, slotIdx) {
     const tot = counts.get(p.id);
     const wk  = wkndCounts.get(p.id);
     const cap = p.double ? 4 : 2;
     if (tot >= cap) return false;
-    if (wk >= 1) return false; // 주말 들어가면 그 주는 그 1슬롯만
+    if (isWeekend(slotIdx)) {
+      if (tot > 0) return false;        // 평일이든 주말이든 이미 들어간 사람은 주말 못 들어감
+    } else {
+      if (wk > 0) return false;         // 주말 들어간 사람은 평일 못 들어감
+    }
     return true;
   }
   function take(p, slotIdx) {
@@ -1183,9 +1189,14 @@ function solveGreedy(active) {
   const wkndCounts = new Map(active.map(p => [p.id, 0]));
 
   function capOf(p) { return p.double ? 4 : 2; }
+  // 주말/평일 mutual exclusion — 한 사람당 둘 중 하나만
   function canTake(p, slotIdx) {
     if (counts.get(p.id) >= capOf(p)) return false;
-    if (wkndCounts.get(p.id) >= 1) return false; // 주말 들어가면 평일도 못 들어감
+    if (isWeekend(slotIdx)) {
+      if (counts.get(p.id) > 0) return false;     // 평일에 이미 들어간 사람은 주말 불가
+    } else {
+      if (wkndCounts.get(p.id) > 0) return false; // 주말에 이미 들어간 사람은 평일 불가
+    }
     return true;
   }
   function place(p, slotIdx, slotPos) {
