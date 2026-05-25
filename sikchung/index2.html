@@ -340,7 +340,7 @@ table.schedule tr.day-divider td { border-top: 2px solid var(--ink); }
 
     <div class="people-grid" id="peopleGrid"></div>
     <p style="font-size:12px; color:var(--muted); margin-top:12px;">
-      인원 칸을 눌러 시간 슬롯 제한 · 우선순위를 편집할 수 있습니다. <br>인원당 최대 2슬롯까지 배정됩니다.
+      인원 칸을 눌러 시간 슬롯 제한 · 우선순위를 편집할 수 있습니다. <br>인원당 최대 2슬롯까지 배정됩니다. (단, 토·일에 들어가면 그 주는 그 1슬롯만)
     </p>
   </div>
 
@@ -801,9 +801,18 @@ document.addEventListener('keydown', (e) => {
 // 상태 배너 (Red / Yellow / Green / Blue info)
 // ============================================================
 function maxCapacity() {
-  // 각 사람 최대 가능 배정 횟수의 합
-  // index2 정책: 인원당 최대 2슬롯 배정
-  return people.length * 2;
+  // index2 정책: 인원당 최대 2슬롯, 단 토/일에 한 번이라도 들어간 사람은 그 주 총 1슬롯만 허용.
+  // 주말 슬롯 4개, 평일 슬롯 20개. w명을 주말에, (N-w)명을 평일 전용으로 두는
+  // 분배 중 채움 슬롯 합이 최대가 되는 값을 반환.
+  const n = people.length;
+  let best = 0;
+  const maxW = Math.min(4, n);
+  for (let w = 0; w <= maxW; w++) {
+    const weekdayPeople = n - w;
+    const filled = w + Math.min(20, weekdayPeople * 2);
+    if (filled > best) best = filled;
+  }
+  return best;
 }
 function activeCount() { return people.length; }
 
@@ -956,10 +965,29 @@ function pairPreferenceForSlot(a, b, slotIdx, schedule) {
 // "모든 인원 ≥1 배정" 같은 공정성 제약은 두지 않음 — 빈 슬롯 최소가 1순위.
 // 가용 인원이 1명뿐인 요일은 한 슬롯만 채우고 다음 요일로 진행, 0명이면 둘 다 비움.
 function solveBacktrack(active, timeBudgetMs = 600) {
-  const maxAssign = () => 2; // index2: 인원당 최대 2슬롯
+  const isWeekend = idx => idx >= 10; // 10: 토 저녁, 11: 일 저녁
   const schedule = emptySchedule();
   const counts = new Map(active.map(p => [p.id, 0]));
+  const wkndCounts = new Map(active.map(p => [p.id, 0])); // 주말 슬롯에 들어간 횟수
   const start = Date.now();
+
+  // 슬롯/인원 조합이 허용되는지 검사.
+  // 평일 슬롯: 주말 슬롯 없고 총 2회 미만이면 OK.
+  // 주말 슬롯: 어떤 슬롯도 없을 때만 OK (들어가면 그 주 총 1슬롯이 됨).
+  function canTake(p, slotIdx) {
+    const tot = counts.get(p.id);
+    const wk  = wkndCounts.get(p.id);
+    if (isWeekend(slotIdx)) return tot === 0;
+    return wk === 0 && tot < 2;
+  }
+  function take(p, slotIdx) {
+    counts.set(p.id, counts.get(p.id) + 1);
+    if (isWeekend(slotIdx)) wkndCounts.set(p.id, wkndCounts.get(p.id) + 1);
+  }
+  function untake(p, slotIdx) {
+    counts.set(p.id, counts.get(p.id) - 1);
+    if (isWeekend(slotIdx)) wkndCounts.set(p.id, wkndCounts.get(p.id) - 1);
+  }
 
   // 슬롯 순회 순서:
   // 1) 월~금은 한 요일(아침+저녁)을 unit 으로 묶어, 그 unit 내에서는 항상 아침 → 저녁 순서로 처리
@@ -982,7 +1010,7 @@ function solveBacktrack(active, timeBudgetMs = 600) {
 
     const day = dayOrder[idx];
     const available = shuffle(active.filter(p =>
-      !p.restricted[day] && counts.get(p.id) < maxAssign(p)
+      !p.restricted[day] && canTake(p, day)
     ));
 
     // 가용 인원 0명 → 양쪽 슬롯 미배정으로 두고 진행
@@ -995,10 +1023,10 @@ function solveBacktrack(active, timeBudgetMs = 600) {
     if (available.length === 1) {
       const a = available[0];
       schedule[day] = [a, null];
-      counts.set(a.id, counts.get(a.id) + 1);
+      take(a, day);
       const r = recurse(idx + 1);
       if (r === true || r === 'TIMEOUT') return r;
-      counts.set(a.id, counts.get(a.id) - 1);
+      untake(a, day);
       schedule[day] = [null, null];
       return false;
     }
@@ -1017,15 +1045,13 @@ function solveBacktrack(active, timeBudgetMs = 600) {
 
     for (const [a, b] of pairs) {
       schedule[day] = [a, b];
-      counts.set(a.id, counts.get(a.id) + 1);
-      counts.set(b.id, counts.get(b.id) + 1);
+      take(a, day); take(b, day);
 
       const r = recurse(idx + 1);
       if (r === true) return true;
       if (r === 'TIMEOUT') return 'TIMEOUT';
 
-      counts.set(a.id, counts.get(a.id) - 1);
-      counts.set(b.id, counts.get(b.id) - 1);
+      untake(a, day); untake(b, day);
       schedule[day] = [null, null];
     }
     return false;
@@ -1067,17 +1093,31 @@ function compareSchedules(a, b) {
 
 
 function solveGreedy(active) {
-  // 백트래킹 실패 시: 가능한 만큼 채우고 미배정 슬롯/실패 인원 보고
-  const maxAssign = () => 2; // index2: 인원당 최대 2슬롯
+  // 백트래킹 실패 시: 가능한 만큼 채우고 미배정 슬롯/실패 인원 보고.
+  // index2 정책: 인원당 최대 2슬롯, 단 토/일에 들어가면 그 주 총 1슬롯만.
+  const isWeekend = idx => idx >= 10;
   const schedule = emptySchedule();
   const counts = new Map(active.map(p => [p.id, 0]));
+  const wkndCounts = new Map(active.map(p => [p.id, 0]));
   const failed = [];
+
+  function canTake(p, slotIdx) {
+    const tot = counts.get(p.id);
+    const wk  = wkndCounts.get(p.id);
+    if (isWeekend(slotIdx)) return tot === 0;
+    return wk === 0 && tot < 2;
+  }
+  function place(p, slotIdx, slotPos) {
+    schedule[slotIdx][slotPos] = p;
+    counts.set(p.id, counts.get(p.id) + 1);
+    if (isWeekend(slotIdx)) wkndCounts.set(p.id, wkndCounts.get(p.id) + 1);
+  }
 
   // 1) 모든 사람을 1회씩 배정 시도
   const order = shuffle(active.slice());
   for (const p of order) {
     const possible = shuffle(Array.from({length:SLOTS_COUNT},(_,i)=>i).filter(d =>
-      !p.restricted[d] && schedule[d].filter(Boolean).length < SLOTS_PER_DAY
+      !p.restricted[d] && canTake(p, d) && schedule[d].filter(Boolean).length < SLOTS_PER_DAY
     ));
     if (possible.length === 0) {
       const restrictedAll = p.restricted.every(x => x);
@@ -1089,23 +1129,23 @@ function solveGreedy(active) {
     }
     const day = possible[0];
     const slotIdx = schedule[day].findIndex(x => x === null);
-    schedule[day][slotIdx] = p;
-    counts.set(p.id, 1);
+    place(p, day, slotIdx);
   }
 
-  // 2) 모든 인원에게 두 번째 슬롯 배정 시도 (index2: 인원당 최대 2슬롯)
+  // 2) 평일에 한 번 들어간 인원에게 두 번째 평일 슬롯 배정 시도
+  //    (주말 인원은 1슬롯 제한 — 두 번째 배정 안 함)
   for (const p of shuffle(active.slice())) {
     if (counts.get(p.id) !== 1) continue;
+    if (wkndCounts.get(p.id) > 0) continue; // 주말 인원은 추가 배정 금지
     const assignedDay = schedule.findIndex(slot => slot.some(x => x && x.id === p.id));
     const possible = shuffle(Array.from({length:SLOTS_COUNT},(_,i)=>i).filter(d =>
-      d !== assignedDay && !p.restricted[d] &&
+      d !== assignedDay && !p.restricted[d] && canTake(p, d) &&
       schedule[d].filter(Boolean).length < SLOTS_PER_DAY
     ));
     if (possible.length > 0) {
       const day = possible[0];
       const slotIdx = schedule[day].findIndex(x => x === null);
-      schedule[day][slotIdx] = p;
-      counts.set(p.id, 2);
+      place(p, day, slotIdx);
     }
   }
 
