@@ -1567,7 +1567,6 @@ function renderResult(r) {
   }
   stat('미배정 슬롯', `${r.emptySlots}개`, r.emptySlots === 0 ? 'ok' : 'warn');
   stat('배정된 인원', `${r.assignCount.size}명`);
-  stat('이번 주 제외', `${r.skipped.length}명`);
 
   // 우선순위로 제외된 인원
   const exDiv = $('exclusionList');
