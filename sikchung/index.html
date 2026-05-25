@@ -442,9 +442,40 @@ function defaultRestrictedFor(name) {
   return (DEFAULT_RESTRICTED[name] || [false,false,false,false,false,false,false]).slice();
 }
 
-let people = []; // {id, name, restricted: bool[7], double: bool, priority: number}
+let people = []; // {id, name, restricted: bool[7], double: bool, priority: number, group, rookie}
 let nextId = 1;
 let lastResult = null; // 마지막으로 생성된 결과 (재생성 시 비교용)
+
+// ------------------------------------------------------------
+// localStorage 영속화 — 페이지를 닫아도 인원 설정이 유지됨
+// ------------------------------------------------------------
+const STORAGE_KEY = 'sikchung-people-v1';
+
+function savePeople() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(people)); }
+  catch (e) { /* private mode 등에서 실패하면 조용히 무시 */ }
+}
+
+function loadPeople() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    // 누락 필드 보정 — 이전 버전 데이터와의 호환
+    return parsed.map(p => ({
+      id: Number(p.id) || uid(),
+      name: String(p.name || ''),
+      restricted: Array.isArray(p.restricted) && p.restricted.length === 7
+        ? p.restricted.map(Boolean)
+        : [false,false,false,false,false,false,false],
+      double: !!p.double,
+      priority: Number.isFinite(p.priority) ? Math.max(0, Math.min(99, p.priority)) : 0,
+      group: (p.group === 'A' || p.group === 'B' || p.group === 'C') ? p.group : (DEFAULT_GROUPS[p.name] || null),
+      rookie: !!p.rookie
+    }));
+  } catch (e) { return null; }
+}
 
 function uid() { return nextId++; }
 function shuffle(arr) {
@@ -541,8 +572,9 @@ function editingPerson() {
   return editingId == null ? null : (people.find(x => x.id === editingId) || null);
 }
 
-// 변경사항은 곧바로 인원 객체에 반영 → 카드 그리드 / 상태 배너 즉시 갱신
+// 변경사항은 곧바로 인원 객체에 반영 → localStorage 저장 + 카드/상태 갱신
 function autoSave() {
+  savePeople();
   renderPeople();
   updateStatus();
 }
@@ -625,6 +657,7 @@ $('modalDelete').addEventListener('click', () => {
   if (!confirm(`'${p.name}' 인원을 삭제하시겠습니까?`)) return;
   people = people.filter(x => x.id !== editingId);
   closeEditor();
+  savePeople();
   renderPeople();
   updateStatus();
 });
@@ -713,6 +746,7 @@ $('addBtn').addEventListener('click', () => {
     rookie: false
   });
   input.value = '';
+  savePeople();
   renderPeople();
   updateStatus();
 });
@@ -723,6 +757,7 @@ $('newName').addEventListener('keydown', (e) => {
 $('resetBtn').addEventListener('click', () => {
   if (!confirm('인원과 설정을 모두 초기화합니다. 계속하시겠습니까?')) return;
   initPeople();
+  savePeople();
   renderPeople();
   updateStatus();
   $('result').style.display = 'none';
@@ -1133,9 +1168,17 @@ $('backBtn').addEventListener('click', () => {
 })();
 
 // ============================================================
-// 부팅
+// 부팅 — localStorage에 저장된 인원이 있으면 복원, 없으면 디폴트
 // ============================================================
-initPeople();
+const saved = loadPeople();
+if (saved && saved.length > 0) {
+  people = saved;
+  // 복원된 인원 중 최대 id 다음부터 새 id 발급
+  nextId = Math.max(0, ...people.map(p => p.id)) + 1;
+} else {
+  initPeople();
+  savePeople();
+}
 renderPeople();
 updateStatus();
 </script>
