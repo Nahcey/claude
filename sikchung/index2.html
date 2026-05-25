@@ -340,7 +340,7 @@ table.schedule tr.day-divider td { border-top: 2px solid var(--ink); }
 
     <div class="people-grid" id="peopleGrid"></div>
     <p style="font-size:12px; color:var(--muted); margin-top:12px;">
-      인원 칸을 눌러 시간 슬롯 제한 · 주 2회 · 우선순위를 편집할 수 있습니다.
+      인원 칸을 눌러 시간 슬롯 제한 · 우선순위를 편집할 수 있습니다. <br>인원당 최대 2슬롯까지 배정됩니다.
     </p>
   </div>
 
@@ -358,13 +358,6 @@ table.schedule tr.day-divider td { border-top: 2px solid var(--ink); }
         </div>
         <div class="field">
           <label class="field-label">배정 옵션</label>
-          <div class="inline-toggle" id="modalDoubleRow" style="margin-bottom:8px;">
-            <div>
-              <div class="label-text">주 2회 배정 가능</div>
-              <div class="label-sub">한 주에 두 번까지 다른 요일에 배정될 수 있음</div>
-            </div>
-            <div class="switch" id="modalDouble"></div>
-          </div>
           <div class="inline-toggle" id="modalRookieRow">
             <div>
               <div class="label-text">신병</div>
@@ -585,12 +578,6 @@ function renderPeople() {
       b.textContent = '신병';
       meta.appendChild(b);
     }
-    if (p.double) {
-      const b = document.createElement('span');
-      b.className = 'pc-mini dbl';
-      b.textContent = '2회';
-      meta.appendChild(b);
-    }
     // 우선순위 P 라벨은 카드에 노출하지 않음 (모달에서만 편집)
     const resCount = p.restricted.filter(Boolean).length;
     if (resCount > 0) {
@@ -612,7 +599,6 @@ function renderPeople() {
 // ============================================================
 const modalOverlay = $('modalOverlay');
 const modalDays    = $('modalDays');
-const modalDouble  = $('modalDouble');
 const modalRookie  = $('modalRookie');
 const modalPriority = $('modalPriority');
 const modalNameEl  = $('modalName');
@@ -744,7 +730,6 @@ function renderModalBody() {
   }
 
   // 스위치 및 입력 동기화
-  modalDouble.classList.toggle('on', p.double);
   modalRookie.classList.toggle('on', !!p.rookie);
   modalPriority.value = p.priority;
 }
@@ -753,15 +738,6 @@ function closeEditor() {
   modalOverlay.classList.remove('open');
   editingId = null;
 }
-
-// 주 2회 토글 — 즉시 반영
-$('modalDoubleRow').addEventListener('click', () => {
-  const p = editingPerson();
-  if (!p) return;
-  p.double = !p.double;
-  modalDouble.classList.toggle('on', p.double);
-  autoSave();
-});
 
 // 신병 토글 — 즉시 반영
 $('modalRookieRow').addEventListener('click', () => {
@@ -800,7 +776,7 @@ $('modalDelete').addEventListener('click', () => {
 $('modalReset').addEventListener('click', () => {
   const p = editingPerson();
   if (!p) return;
-  if (!confirm('이 인원의 설정(제한 시간 슬롯 · 주 2회 · 우선순위 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
+  if (!confirm('이 인원의 설정(제한 시간 슬롯 · 우선순위 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
   const defaultIdx = DEFAULT_NAMES.indexOf(p.name);
   const defaultPriority = defaultIdx >= 0 ? (DEFAULT_NAMES.length - defaultIdx) : 0;
   p.restricted = defaultRestrictedFor(p.name); // 12칸 배열
@@ -826,7 +802,8 @@ document.addEventListener('keydown', (e) => {
 // ============================================================
 function maxCapacity() {
   // 각 사람 최대 가능 배정 횟수의 합
-  return people.reduce((s, p) => s + (p.double ? 2 : 1), 0);
+  // index2 정책: 인원당 최대 2슬롯 배정
+  return people.length * 2;
 }
 function activeCount() { return people.length; }
 
@@ -839,10 +816,10 @@ function updateStatus() {
   st.classList.remove('green','yellow','red');
   if (cap < TOTAL_SLOTS) {
     st.classList.add('red');
-    stText.innerHTML = `최대 가능 배정 횟수가 ${cap}회입니다. ${TOTAL_SLOTS} 슬롯을 모두 채울 수 없습니다. (인원/주 2회 추가 필요)`;
+    stText.innerHTML = `최대 가능 배정 횟수가 ${cap}회입니다. ${TOTAL_SLOTS} 슬롯을 모두 채울 수 없습니다. (인원 추가 필요)`;
   } else if (cap === TOTAL_SLOTS) {
     st.classList.add('yellow');
-    stText.innerHTML = `최대 가능 배정 횟수가 정확히 ${TOTAL_SLOTS}회입니다. 모든 "주 2회" 사용 시에만 가능.`;
+    stText.innerHTML = `최대 가능 배정 횟수가 정확히 ${TOTAL_SLOTS}회입니다.`;
   } else {
     st.classList.add('green');
     stText.innerHTML = `충분한 인원이 확보되었습니다. 일정을 생성하세요.`;
@@ -979,7 +956,7 @@ function pairPreferenceForSlot(a, b, slotIdx, schedule) {
 // "모든 인원 ≥1 배정" 같은 공정성 제약은 두지 않음 — 빈 슬롯 최소가 1순위.
 // 가용 인원이 1명뿐인 요일은 한 슬롯만 채우고 다음 요일로 진행, 0명이면 둘 다 비움.
 function solveBacktrack(active, timeBudgetMs = 600) {
-  const maxAssign = p => p.double ? 2 : 1;
+  const maxAssign = () => 2; // index2: 인원당 최대 2슬롯
   const schedule = emptySchedule();
   const counts = new Map(active.map(p => [p.id, 0]));
   const start = Date.now();
@@ -1091,7 +1068,7 @@ function compareSchedules(a, b) {
 
 function solveGreedy(active) {
   // 백트래킹 실패 시: 가능한 만큼 채우고 미배정 슬롯/실패 인원 보고
-  const maxAssign = p => p.double ? 2 : 1;
+  const maxAssign = () => 2; // index2: 인원당 최대 2슬롯
   const schedule = emptySchedule();
   const counts = new Map(active.map(p => [p.id, 0]));
   const failed = [];
@@ -1116,9 +1093,9 @@ function solveGreedy(active) {
     counts.set(p.id, 1);
   }
 
-  // 2) 주 2회 가능 인원에 두 번째 일자 배정
+  // 2) 모든 인원에게 두 번째 슬롯 배정 시도 (index2: 인원당 최대 2슬롯)
   for (const p of shuffle(active.slice())) {
-    if (!p.double || counts.get(p.id) !== 1) continue;
+    if (counts.get(p.id) !== 1) continue;
     const assignedDay = schedule.findIndex(slot => slot.some(x => x && x.id === p.id));
     const possible = shuffle(Array.from({length:SLOTS_COUNT},(_,i)=>i).filter(d =>
       d !== assignedDay && !p.restricted[d] &&
