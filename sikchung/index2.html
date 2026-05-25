@@ -1346,13 +1346,21 @@ function renderResult(r) {
   // 주말 인원 → 그가 들어간 주말 day 라벨 매핑 ("토"/"일" 또는 "토일")
   // 평일 슬롯 chip 에 "+토" 같은 작은 배지를 붙여 주말 겸직임을 표시한다.
   const weekendCrossover = new Map(); // id → "토"/"일"/"토일"
-  for (let i = 10; i < SLOTS_COUNT; i++) {
-    const label = TIME_SLOTS[i].day;
+  const weekdayIds = new Set();       // 평일 슬롯에 한 번이라도 들어간 인원
+  for (let i = 0; i < SLOTS_COUNT; i++) {
     for (const p of r.schedule[i]) if (p) {
-      const cur = weekendCrossover.get(p.id) || '';
-      if (!cur.includes(label)) weekendCrossover.set(p.id, cur + label);
+      if (i >= 10) {
+        const label = TIME_SLOTS[i].day;
+        const cur = weekendCrossover.get(p.id) || '';
+        if (!cur.includes(label)) weekendCrossover.set(p.id, cur + label);
+      } else {
+        weekdayIds.add(p.id);
+      }
     }
   }
+  // 주말 + 평일 둘 다 들어간 인원 (orange "N회" 배지 대상)
+  const trueCrossover = new Set();
+  for (const id of weekendCrossover.keys()) if (weekdayIds.has(id)) trueCrossover.add(id);
 
   let prevDay = null;
   for (let d = 0; d < SLOTS_COUNT; d++) {
@@ -1380,9 +1388,9 @@ function renderResult(r) {
         const chip = document.createElement('span');
         chip.className = 'person-chip';
         chip.textContent = p.name;
-        // 한 주에 3슬롯 이상 들어간 인원에게만 "N회" 배지
+        // 주말 + 평일 둘 다 들어간 인원은 모든 chip 에 주황색 "N회" 배지 (N = 총 슬롯 수)
         const cnt = r.assignCount.get(p.id) || 0;
-        if (cnt >= 3) {
+        if (trueCrossover.has(p.id)) {
           const b = document.createElement('span');
           b.className = 'badge-2x';
           b.textContent = cnt + '회';
