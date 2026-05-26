@@ -1,0 +1,1907 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>식당 청소 일정 생성기</title>
+<style>
+:root {
+  --bg: #F5F7FA;
+  --card: #FFFFFF;
+  --ink: #1F2937;
+  --muted: #6B7280;
+  --border: #E5E7EB;
+  --primary: #2563EB;
+  --primary-dark: #1D4ED8;
+  --accent: #F97316;
+  --green: #16A34A;
+  --yellow: #EAB308;
+  --red: #DC2626;
+  --info: #0EA5E9;
+  --skip-tint: #FEF9C3;
+  --shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 14px 12px 32px; }
+
+h1 { font-size: 19px; font-weight: 700; margin-bottom: 2px; }
+.subtitle { color: var(--muted); font-size: 12px; }
+.page-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; margin-bottom: 24px;
+}
+.updated {
+  font-size: 12px; color: var(--muted); white-space: nowrap;
+  padding-top: 6px; font-weight: 500;
+}
+@media (max-width: 420px) { .updated { font-size: 11px; } }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+}
+.card h2 { font-size: 14px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.card h2 .count { color: var(--muted); font-weight: 400; font-size: 13px; }
+
+/* Status banner */
+.status {
+  padding: 12px 16px; border-radius: 10px; font-size: 14px; font-weight: 500;
+  margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+  border: 1px solid transparent;
+}
+.status.green  { background: #DCFCE7; color: #166534; border-color: #BBF7D0; }
+.status.yellow { background: #FEF9C3; color: #854D0E; border-color: #FDE68A; }
+.status.red    { background: #FEE2E2; color: #991B1B; border-color: #FECACA; }
+.status .dot { width: 10px; height: 10px; border-radius: 50%; }
+.status.green .dot  { background: var(--green); }
+.status.yellow .dot { background: var(--yellow); }
+.status.red .dot    { background: var(--red); }
+
+.info-banner {
+  background: #E0F2FE; color: #075985; padding: 10px 14px;
+  border-radius: 10px; font-size: 13px; margin-bottom: 16px;
+  border: 1px solid #BAE6FD;
+}
+
+/* Buttons */
+.btn {
+  padding: 10px 16px; border: none; border-radius: 10px; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  transition: transform 0.1s, background 0.15s, opacity 0.15s;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.7; cursor: progress; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+.btn-primary { background: var(--primary); color: white; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+.btn-secondary { background: var(--bg); color: var(--ink); border: 1px solid var(--border); }
+.btn-secondary:hover:not(:disabled) { background: #E5E7EB; }
+.btn-danger { background: transparent; color: var(--red); padding: 4px 8px; font-size: 12px; }
+.btn-danger:hover { background: #FEE2E2; }
+.btn-large { padding: 14px 20px; font-size: 15px; font-weight: 600; }
+
+/* Add person inline */
+.add-row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+.add-row input {
+  flex: 1; padding: 9px 12px; border: 1px solid var(--border);
+  border-radius: 8px; font-family: inherit; font-size: 14px;
+}
+.add-row input:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: var(--primary); }
+
+/* People table */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.people {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+  min-width: 720px;
+}
+table.people th, table.people td {
+  padding: 8px 6px; text-align: center; border-bottom: 1px solid var(--border);
+}
+table.people th {
+  font-weight: 600; color: var(--muted); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  background: var(--bg);
+}
+table.people tbody tr.skip-tint { background: var(--skip-tint); }
+table.people td.name { text-align: left; font-weight: 500; padding-left: 12px; min-width: 90px; }
+table.people td.actions { text-align: right; padding-right: 8px; }
+table.people input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
+table.people input[type="number"] {
+  width: 50px; padding: 4px 6px; border: 1px solid var(--border);
+  border-radius: 6px; font-family: inherit; font-size: 13px; text-align: center;
+}
+
+/* Generate button row */
+.actions-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* Result table */
+table.schedule {
+  width: 100%; min-width: 360px;
+  border-collapse: separate; border-spacing: 0;
+  font-size: 13px; margin-top: 4px;
+}
+table.schedule th, table.schedule td {
+  padding: 6px 6px; text-align: center; border-bottom: 1px solid var(--border);
+}
+table.schedule th {
+  font-weight: 600; color: var(--muted); font-size: 11px;
+  background: var(--bg); letter-spacing: 0.5px;
+}
+table.schedule td.day-label {
+  font-weight: 700; width: 40px; background: #F9FAFB; font-size: 14px;
+}
+table.schedule td.cell-empty   { background: #FEE2E2; }
+table.schedule td.cell-partial { background: #FEF9C3; }
+table.schedule td.cell-full    { background: #FFFFFF; }
+table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-size: 16px; }
+.cell-chips {
+  display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; align-items: center;
+}
+.person-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 8px; background: #F3F4F6; color: var(--ink);
+  border-radius: 999px; font-size: 12px; font-weight: 500;
+  white-space: nowrap; word-break: keep-all;
+  flex-shrink: 0;
+}
+.person-chip.crossover {
+  background: #FDE68A; color: #78350F;
+}
+.person-chip > * { flex-shrink: 0; }
+.badge-2x {
+  display: inline-block; padding: 1px 4px; font-size: 9px; font-weight: 700;
+  background: var(--accent); color: white; border-radius: 4px;
+  margin-left: 2px; white-space: nowrap;
+}
+.badge-skip {
+  display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 600;
+  background: #E5E7EB; color: var(--muted); border-radius: 4px; margin-left: 6px;
+}
+.badge-priority {
+  display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: 600;
+  background: #FEF3C7; color: #92400E; border-radius: 4px; margin-left: 6px;
+}
+.unassigned { color: var(--red); font-weight: 600; font-size: 12px; }
+.unassigned-wrap { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.unassigned-cands {
+  font-size: 10px; color: #6B7280; text-align: center;
+  word-break: keep-all; line-height: 1.35; max-width: 140px;
+}
+
+/* 결과 편집 모드 */
+.slot-pos {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 500; margin: 1px;
+  white-space: nowrap; word-break: keep-all;
+  border: 2px solid transparent; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.slot-pos.chip-wrap { background: #F3F4F6; color: var(--ink); }
+.slot-pos.chip-wrap.crossover { background: #FDE68A; color: #78350F; }
+.slot-pos.empty-pos {
+  background: rgba(220,38,38,0.08); color: var(--red); font-weight: 600;
+}
+.slot-pos.selected { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+.slot-pos.swap-ok  { border-color: var(--green); }
+.slot-pos.swap-bad { border-color: var(--red); opacity: 0.55; }
+.slot-pos > * { flex-shrink: 0; }
+
+#editPanel {
+  margin-top: 12px; padding: 12px;
+  background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 10px;
+}
+.edit-panel-header {
+  font-weight: 600; font-size: 13px; color: #075985; margin-bottom: 8px;
+}
+.edit-panel-help { font-size: 11px; color: #075985; margin-bottom: 8px; }
+.edit-candidates {
+  display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0;
+}
+.cand-chip {
+  padding: 4px 10px; background: white; border: 1px solid var(--border);
+  color: var(--ink); border-radius: 999px; font-size: 12px;
+  font-family: inherit; cursor: pointer;
+  white-space: nowrap; word-break: keep-all;
+}
+.cand-chip:hover { background: #DBEAFE; border-color: var(--primary); }
+.edit-panel-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;
+}
+.edit-panel-actions .btn { padding: 6px 12px; font-size: 13px; }
+
+.summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px; margin: 16px 0;
+}
+.stat {
+  background: var(--bg); padding: 12px; border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.stat .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+.stat.warn .value { color: var(--red); }
+.stat.ok   .value { color: var(--green); }
+
+.exclusion-list, .fail-list {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px; margin-top: 10px; font-size: 13px;
+}
+.exclusion-list h4, .fail-list h4 { font-size: 13px; margin-bottom: 8px; color: var(--muted); }
+.exclusion-list ul, .fail-list ul { list-style: none; }
+.exclusion-list li, .fail-list li { padding: 4px 0; }
+
+/* People grid (pill list) */
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+}
+.person-card {
+  position: relative;
+  padding: 8px 6px 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: center;
+  font-family: inherit;
+  transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s;
+}
+.person-card:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(37,99,235,0.08); }
+.person-card:active { transform: scale(0.97); }
+.person-card .pc-name { font-weight: 600; font-size: 12px; color: var(--ink); }
+.person-card .pc-meta { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; min-height: 14px; }
+.pc-mini {
+  display: inline-block; padding: 1px 4px; font-size: 9px; font-weight: 600;
+  border-radius: 3px; line-height: 1.3;
+}
+.pc-mini.dbl { background: #FFEDD5; color: #9A3412; }
+.pc-mini.pri { background: #FEF3C7; color: #92400E; }
+.pc-mini.res { background: #E0E7FF; color: #3730A3; }
+.pc-mini.rkk { background: #DBEAFE; color: #1E40AF; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5);
+  display: none; align-items: center; justify-content: center;
+  z-index: 100; padding: 16px;
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--card); border-radius: 16px; width: 100%; max-width: 460px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+  max-height: 90vh; overflow-y: auto;
+  animation: pop 0.18s ease-out;
+}
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-head h3 { font-size: 17px; font-weight: 700; }
+.modal-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 22px; line-height: 1; color: var(--muted); padding: 4px 8px;
+}
+.modal-close:hover { color: var(--ink); }
+.modal-body { padding: 16px 20px; }
+.modal-body .field { margin-bottom: 18px; }
+.modal-body .field-label {
+  display: block; font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+}
+.day-grid {
+  display: grid; grid-template-columns: 36px 1fr 1fr 1fr; gap: 6px;
+  align-items: center;
+}
+.day-grid .grid-header {
+  font-size: 11px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.6px; text-align: center; font-weight: 600;
+  padding-bottom: 2px;
+}
+.day-grid .day-label-cell {
+  font-weight: 700; font-size: 14px; text-align: center; color: var(--ink);
+}
+.day-toggle {
+  padding: 10px 0; border: 1px solid var(--border); background: var(--card);
+  border-radius: 8px; font-family: inherit; font-size: 13px; cursor: pointer;
+  color: var(--ink); transition: all 0.15s;
+}
+.day-toggle.active {
+  background: #FEE2E2; border-color: #FCA5A5; color: var(--red); font-weight: 600;
+}
+.day-toggle:hover:not(.active) { background: var(--bg); }
+.day-toggle.full-week { grid-column: 2 / 5; }
+.inline-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px; background: var(--bg); border-radius: 10px; cursor: pointer;
+}
+.inline-toggle:hover { background: #E5E7EB; }
+.inline-toggle .label-text { font-size: 14px; font-weight: 500; }
+.inline-toggle .label-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.switch {
+  position: relative; width: 44px; height: 24px; background: #CBD5E1;
+  border-radius: 999px; transition: background 0.2s; flex-shrink: 0;
+}
+.switch.on { background: var(--primary); }
+.switch::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px; background: white; border-radius: 50%;
+  transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.switch.on::after { transform: translateX(20px); }
+.priority-input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 10px; font-family: inherit; font-size: 14px;
+}
+.priority-input:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: var(--primary); }
+.modal-foot {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 14px 20px 18px; border-top: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .container { padding: 16px 10px 32px; }
+  h1 { font-size: 20px; }
+  .card { padding: 16px; }
+  .people-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .person-card { padding: 12px 10px 8px; }
+  .person-card .pc-name { font-size: 13px; }
+  .modal-body .day-grid { gap: 4px; }
+  .day-toggle { font-size: 12px; padding: 8px 0; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="page-header">
+    <div>
+      <h1>식당 청소 일정 생성기</h1>
+      <p class="subtitle">월~금 아침·저녁 + 토·일, 각 슬롯에 2명씩 자동 배정합니다.</p>
+    </div>
+    <div class="updated" id="updatedLabel"></div>
+  </div>
+
+  <!-- Status (UI 미노출 — 알고리즘 진단용 내부 요소만 유지) -->
+  <div id="status" class="status green" style="display:none;">
+    <div class="dot"></div>
+    <div id="statusText"></div>
+  </div>
+  <div id="infoBanner" class="info-banner" style="display:none;"></div>
+
+  <!-- People Section -->
+  <div class="card">
+    <h2>인원 설정 <span class="count" id="personCount"></span></h2>
+    <div class="add-row">
+      <input type="text" id="newName" placeholder="이름을 입력하세요" maxlength="20">
+      <button class="btn btn-primary" id="addBtn">인원 추가</button>
+    </div>
+
+    <div class="people-grid" id="peopleGrid"></div>
+    <p style="font-size:12px; color:var(--muted); margin-top:12px;">
+      인원 칸을 눌러 시간 슬롯 제한 · 주 2회 · 신병을 편집할 수 있습니다. <br>주 2회 OFF: 최대 2슬롯 · ON: 최대 4슬롯.
+    </p>
+  </div>
+
+  <!-- 인원 편집 모달 -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 id="modalName">이름</h3>
+        <button class="modal-close" id="modalClose" aria-label="닫기">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label">불가능한 시간 슬롯</label>
+          <div class="day-grid" id="modalDays"></div>
+        </div>
+        <div class="field">
+          <label class="field-label">배정 옵션</label>
+          <div class="inline-toggle" id="modalDoubleRow" style="margin-bottom:8px;">
+            <div>
+              <div class="label-text">주 2회 배정 가능</div>
+              <div class="label-sub">OFF: 최대 2슬롯 · ON: 최대 4슬롯</div>
+            </div>
+            <div class="switch" id="modalDouble"></div>
+          </div>
+          <div class="inline-toggle" id="modalRookieRow">
+            <div>
+              <div class="label-text">신병</div>
+              <div class="label-sub">선임과 같이 들어감</div>
+            </div>
+            <div class="switch" id="modalRookie"></div>
+          </div>
+        </div>
+        <div class="field" style="display:none;">
+          <label class="field-label" for="modalPriority">미배정 우선순위 (0 ~ 99)</label>
+          <input type="number" min="0" max="99" class="priority-input" id="modalPriority">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" id="modalDelete" style="background:#FEE2E2;color:var(--red);padding:8px 14px;font-weight:500;">삭제</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-secondary" id="modalReset">초기화</button>
+          <button class="btn btn-primary" id="modalDone">닫기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate -->
+  <div class="actions-row" style="margin-bottom:20px;">
+    <button class="btn btn-primary btn-large" id="generateBtn">일정 생성</button>
+    <button class="btn btn-secondary btn-large" id="resetBtn">초기화</button>
+  </div>
+
+  <!-- Result -->
+  <div id="result" style="display:none;">
+    <div class="card">
+      <h2>주간 청소 일정</h2>
+      <div class="table-wrap">
+        <table class="schedule">
+          <thead>
+            <tr>
+              <th>요일</th>
+              <th>아침</th>
+              <th>저녁</th>
+            </tr>
+          </thead>
+          <tbody id="scheduleBody"></tbody>
+        </table>
+      </div>
+
+      <div class="summary" id="summary"></div>
+      <div id="exclusionList"></div>
+      <div id="failList"></div>
+
+      <div id="editPanel" style="display:none;"></div>
+
+      <div class="actions-row" style="margin-top:18px;">
+        <button class="btn btn-primary" id="regenBtn">재생성</button>
+        <button class="btn btn-secondary" id="editBtn">편집</button>
+        <button class="btn btn-secondary" id="backBtn">다시 설정</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// 상수 / 유틸
+// ============================================================
+// 시간 슬롯 — 월~금은 아침/저녁 분리, 토·일은 단일 슬롯 (총 12개)
+const TIME_SLOTS = [
+  { day:'월', shift:'아침', label:'월 아침' },  // 0
+  { day:'월', shift:'저녁', label:'월 저녁' },  // 1
+  { day:'화', shift:'아침', label:'화 아침' },  // 2
+  { day:'화', shift:'저녁', label:'화 저녁' },  // 3
+  { day:'수', shift:'아침', label:'수 아침' },  // 4
+  { day:'수', shift:'저녁', label:'수 저녁' },  // 5
+  { day:'목', shift:'아침', label:'목 아침' },  // 6
+  { day:'목', shift:'저녁', label:'목 저녁' },  // 7
+  { day:'금', shift:'아침', label:'금 아침' },  // 8
+  { day:'금', shift:'저녁', label:'금 저녁' },  // 9
+  { day:'토', shift:'저녁', label:'토 저녁' },  // 10
+  { day:'일', shift:'저녁', label:'일 저녁' }   // 11
+];
+const SLOTS_COUNT  = TIME_SLOTS.length;          // 12
+const SLOTS_PER_DAY = 2;                          // 각 시간 슬롯당 인원
+const TOTAL_SLOTS  = SLOTS_COUNT * SLOTS_PER_DAY; // 24
+const DEFAULT_NAMES = [
+  '이동민','김기환','정우진','윤민형','한우현',
+  '권정훈','정한결','김최원','오승호','박예찬',
+  '권기범','최정협','전유찬'
+];
+// 같은 그룹 인원을 가능한 한 같은 요일에 묶는 데 사용 (소프트 선호)
+const DEFAULT_GROUPS = {
+  '이동민':'A','김기환':'A','정우진':'A',
+  '윤민형':'B','한우현':'B','권정훈':'B','정한결':'B','김최원':'B',
+  '오승호':'C','박예찬':'C','권기범':'C','최정협':'C','전유찬':'C'
+};
+// 특정 인원의 디폴트 시간 슬롯 제한
+// 인덱스 0~9: 월~금 아침/저녁 (각 요일 2칸씩), 10: 토, 11: 일
+const DEFAULT_RESTRICTED = {
+  // 윤민형: 월~금 아침·저녁 모두 제한 (인덱스 0~9), 토·일은 가능
+  '윤민형': [true,true, true,true, true,true, true,true, true,true, false, false]
+};
+function defaultRestrictedFor(name) {
+  return (DEFAULT_RESTRICTED[name] || new Array(SLOTS_COUNT).fill(false)).slice();
+}
+
+let people = []; // {id, name, restricted: bool[7], double: bool, priority: number, group, rookie}
+let nextId = 1;
+let lastResult = null; // 마지막으로 생성된 결과 (재생성 시 비교용)
+
+// ------------------------------------------------------------
+// localStorage 영속화 — 페이지를 닫아도 인원 설정이 유지됨
+// ------------------------------------------------------------
+const STORAGE_KEY        = 'sikchung-people-v2';
+const STORAGE_KEY_LEGACY = 'sikchung-people-v1';   // index.html 의 v1 스키마(요일 7칸)
+
+function savePeople() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(people)); }
+  catch (e) { /* private mode 등에서 실패하면 조용히 무시 */ }
+}
+
+// 요일 7칸 → 시간 슬롯 12칸 마이그레이션 (월~금은 아침/저녁 모두 같은 값으로 복제)
+function migrateRestricted(r) {
+  if (Array.isArray(r) && r.length === SLOTS_COUNT) return r.map(Boolean);
+  if (Array.isArray(r) && r.length === 7) {
+    return [
+      !!r[0], !!r[0],  // 월
+      !!r[1], !!r[1],  // 화
+      !!r[2], !!r[2],  // 수
+      !!r[3], !!r[3],  // 목
+      !!r[4], !!r[4],  // 금
+      !!r[5],          // 토
+      !!r[6]           // 일
+    ];
+  }
+  return new Array(SLOTS_COUNT).fill(false);
+}
+
+function normalizePerson(p) {
+  return {
+    id: Number(p.id) || uid(),
+    name: String(p.name || ''),
+    restricted: migrateRestricted(p.restricted),
+    double: !!p.double,
+    priority: Number.isFinite(p.priority) ? Math.max(0, Math.min(99, p.priority)) : 0,
+    group: (p.group === 'A' || p.group === 'B' || p.group === 'C') ? p.group : (DEFAULT_GROUPS[p.name] || null),
+    rookie: !!p.rookie
+  };
+}
+
+function loadPeople() {
+  try {
+    // 1) v2 우선
+    let raw = localStorage.getItem(STORAGE_KEY);
+    let parsed = raw ? JSON.parse(raw) : null;
+    // 2) v2 없으면 v1 에서 1회성 마이그레이션 (index.html 사용 흔적)
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      raw = localStorage.getItem(STORAGE_KEY_LEGACY);
+      parsed = raw ? JSON.parse(raw) : null;
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    return parsed.map(normalizePerson);
+  } catch (e) { return null; }
+}
+
+function uid() { return nextId++; }
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ============================================================
+// 초기 인원 세팅
+// ============================================================
+function initPeople() {
+  // 표시 순서대로 N~1 우선순위 부여 (앞쪽일수록 높은 우선순위).
+  // 슬롯 초과 시 앞쪽 인원부터 먼저 제외됨.
+  people = DEFAULT_NAMES.map((name, i) => ({
+    id: uid(),
+    name,
+    restricted: defaultRestrictedFor(name),
+    double: false, // index2 디폴트: 주 2회 OFF
+    priority: DEFAULT_NAMES.length - i,
+    group: DEFAULT_GROUPS[name] || null,
+    rookie: false
+  }));
+}
+
+// ============================================================
+// 렌더 — 인원 테이블
+// ============================================================
+const $ = (id) => document.getElementById(id);
+const peopleGrid = $('peopleGrid');
+
+// ============================================================
+// 인원 그리드 — 이름만 보이는 컴팩트 카드
+// ============================================================
+function renderPeople() {
+  peopleGrid.innerHTML = '';
+  for (const p of people) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'person-card';
+    card.addEventListener('click', () => openEditor(p.id));
+
+    const name = document.createElement('div');
+    name.className = 'pc-name';
+    name.textContent = p.name;
+    card.appendChild(name);
+
+    const meta = document.createElement('div');
+    meta.className = 'pc-meta';
+    if (p.rookie) {
+      const b = document.createElement('span');
+      b.className = 'pc-mini rkk';
+      b.textContent = '신병';
+      meta.appendChild(b);
+    }
+    if (p.double) {
+      const b = document.createElement('span');
+      b.className = 'pc-mini dbl';
+      b.textContent = '2회';
+      meta.appendChild(b);
+    }
+    // 우선순위 P 라벨은 카드에 노출하지 않음 (모달에서만 편집)
+    const resCount = p.restricted.filter(Boolean).length;
+    if (resCount > 0) {
+      const b = document.createElement('span');
+      b.className = 'pc-mini res';
+      b.textContent = `제한 ${resCount}칸`;
+      meta.appendChild(b);
+    }
+    card.appendChild(meta);
+
+    peopleGrid.appendChild(card);
+  }
+
+  $('personCount').textContent = `(현재 인원: ${people.length}명 / 총 배정 슬롯: ${TOTAL_SLOTS})`;
+}
+
+// ============================================================
+// 인원 편집 모달
+// ============================================================
+const modalOverlay = $('modalOverlay');
+const modalDays    = $('modalDays');
+const modalDouble  = $('modalDouble');
+const modalRookie  = $('modalRookie');
+const modalPriority = $('modalPriority');
+const modalNameEl  = $('modalName');
+let editingId = null;
+
+// 현재 편집 중인 인원 객체 반환 (없거나 삭제됐으면 null)
+function editingPerson() {
+  return editingId == null ? null : (people.find(x => x.id === editingId) || null);
+}
+
+// 변경사항은 곧바로 인원 객체에 반영 → localStorage 저장 + 카드/상태 갱신
+function autoSave() {
+  savePeople();
+  renderPeople();
+  updateStatus();
+}
+
+function openEditor(personId) {
+  const p = people.find(x => x.id === personId);
+  if (!p) return;
+  editingId = personId;
+  modalNameEl.textContent = p.name;
+  renderModalBody();
+  modalOverlay.classList.add('open');
+}
+
+// 시간 슬롯 토글 1개 생성 (월~금 아침/저녁 또는 토/일 전체)
+function createSlotToggle(slotIdx, text, fullWeek) {
+  const cur = editingPerson();
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'day-toggle' + (cur && cur.restricted[slotIdx] ? ' active' : '') + (fullWeek ? ' full-week' : '');
+  btn.textContent = text;
+  btn.addEventListener('click', () => {
+    const c = editingPerson();
+    if (!c) return;
+    c.restricted[slotIdx] = !c.restricted[slotIdx];
+    btn.classList.toggle('active', c.restricted[slotIdx]);
+    autoSave();
+  });
+  return btn;
+}
+
+// 월~금용 한 행 — 아침/저녁/전체 세 버튼이 서로 상태 동기화
+function appendWeekdayRow(dayIdx) {
+  const morningIdx = dayIdx * 2;
+  const eveningIdx = dayIdx * 2 + 1;
+
+  const label = document.createElement('div');
+  label.className = 'day-label-cell';
+  label.textContent = TIME_SLOTS[morningIdx].day;
+  modalDays.appendChild(label);
+
+  // 세 버튼 미리 생성 → 핸들러에서 서로 참조
+  const mBtn = document.createElement('button');
+  const eBtn = document.createElement('button');
+  const allBtn = document.createElement('button');
+
+  function syncAll() {
+    const c = editingPerson();
+    if (!c) return;
+    allBtn.classList.toggle('active', c.restricted[morningIdx] && c.restricted[eveningIdx]);
+  }
+
+  function setupSlot(btn, idx, text) {
+    btn.type = 'button';
+    const c = editingPerson();
+    btn.className = 'day-toggle' + (c && c.restricted[idx] ? ' active' : '');
+    btn.textContent = text;
+    btn.addEventListener('click', () => {
+      const cur = editingPerson();
+      if (!cur) return;
+      cur.restricted[idx] = !cur.restricted[idx];
+      btn.classList.toggle('active', cur.restricted[idx]);
+      syncAll();
+      autoSave();
+    });
+  }
+  setupSlot(mBtn, morningIdx, '아침');
+  setupSlot(eBtn, eveningIdx, '저녁');
+
+  // 전체 버튼: 둘 다 켜져 있을 때만 active 표시. 누르면 두 슬롯을 동시에 토글.
+  allBtn.type = 'button';
+  const cur = editingPerson();
+  const bothOn = cur && cur.restricted[morningIdx] && cur.restricted[eveningIdx];
+  allBtn.className = 'day-toggle' + (bothOn ? ' active' : '');
+  allBtn.textContent = '전체';
+  allBtn.addEventListener('click', () => {
+    const c = editingPerson();
+    if (!c) return;
+    const newVal = !(c.restricted[morningIdx] && c.restricted[eveningIdx]);
+    c.restricted[morningIdx] = newVal;
+    c.restricted[eveningIdx] = newVal;
+    mBtn.classList.toggle('active', newVal);
+    eBtn.classList.toggle('active', newVal);
+    allBtn.classList.toggle('active', newVal);
+    autoSave();
+  });
+
+  modalDays.appendChild(mBtn);
+  modalDays.appendChild(eBtn);
+  modalDays.appendChild(allBtn);
+}
+
+// 모달 내부 폼을 현재 인원의 실제 값으로 다시 그림 (초기화/열기에서 공통 사용)
+function renderModalBody() {
+  const p = editingPerson();
+  if (!p) return;
+
+  // 그리드: [요일 라벨 | 아침 | 저녁 | 전체]
+  modalDays.innerHTML = '';
+  // 헤더 행 — 라벨 자리 + 3개 헤더
+  modalDays.appendChild(document.createElement('div'));
+  for (const h of ['아침', '저녁', '전체']) {
+    const cell = document.createElement('div');
+    cell.className = 'grid-header';
+    cell.textContent = h;
+    modalDays.appendChild(cell);
+  }
+  // 월~금 (5행)
+  for (let i = 0; i < 5; i++) appendWeekdayRow(i);
+  // 토·일 (각 행에 단일 '저녁' 버튼이 전체 폭)
+  for (let i = 10; i < SLOTS_COUNT; i++) {
+    const label = document.createElement('div');
+    label.className = 'day-label-cell';
+    label.textContent = TIME_SLOTS[i].day;
+    modalDays.appendChild(label);
+    modalDays.appendChild(createSlotToggle(i, '저녁', true));
+  }
+
+  // 스위치 및 입력 동기화
+  modalDouble.classList.toggle('on', !!p.double);
+  modalRookie.classList.toggle('on', !!p.rookie);
+  modalPriority.value = p.priority;
+}
+
+function closeEditor() {
+  modalOverlay.classList.remove('open');
+  editingId = null;
+}
+
+// 주 2회 토글 — 즉시 반영
+$('modalDoubleRow').addEventListener('click', () => {
+  const p = editingPerson();
+  if (!p) return;
+  p.double = !p.double;
+  modalDouble.classList.toggle('on', p.double);
+  autoSave();
+});
+
+// 신병 토글 — 즉시 반영
+$('modalRookieRow').addEventListener('click', () => {
+  const p = editingPerson();
+  if (!p) return;
+  p.rookie = !p.rookie;
+  modalRookie.classList.toggle('on', p.rookie);
+  autoSave();
+});
+
+// 우선순위 입력 — 즉시 반영
+modalPriority.addEventListener('input', () => {
+  const p = editingPerson();
+  if (!p) return;
+  let v = parseInt(modalPriority.value, 10);
+  if (isNaN(v) || v < 0) v = 0;
+  if (v > 99) v = 99;
+  p.priority = v;
+  autoSave();
+});
+
+// 삭제
+$('modalDelete').addEventListener('click', () => {
+  const p = editingPerson();
+  if (!p) return;
+  if (!confirm(`'${p.name}' 인원을 삭제하시겠습니까?`)) return;
+  people = people.filter(x => x.id !== editingId);
+  closeEditor();
+  savePeople();
+  renderPeople();
+  updateStatus();
+});
+
+// 해당 인원 설정만 초기화 (모달은 열린 상태 유지)
+// 우선순위는 디폴트 명단의 위치 기반 값으로 복원, 커스텀 추가 인원은 0
+$('modalReset').addEventListener('click', () => {
+  const p = editingPerson();
+  if (!p) return;
+  if (!confirm('이 인원의 설정(제한 시간 슬롯 · 주 2회 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
+  const defaultIdx = DEFAULT_NAMES.indexOf(p.name);
+  const defaultPriority = defaultIdx >= 0 ? (DEFAULT_NAMES.length - defaultIdx) : 0;
+  p.restricted = defaultRestrictedFor(p.name); // 12칸 배열
+  p.double = false; // index2 디폴트: 주 2회 OFF
+  p.priority = defaultPriority;
+  p.rookie = false;
+  renderModalBody();
+  autoSave();
+});
+
+// 닫기 (X / 푸터 / 배경 / ESC) — 자동 저장이므로 단순히 모달만 닫음
+$('modalClose').addEventListener('click', closeEditor);
+$('modalDone').addEventListener('click', closeEditor);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeEditor();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalOverlay.classList.contains('open')) closeEditor();
+});
+
+// ============================================================
+// 상태 배너 (Red / Yellow / Green / Blue info)
+// ============================================================
+function maxCapacity() {
+  // index2 정책: 인원당 총 cap = (p.double ? 4 : 2). 주말 슬롯은 한 사람당 1회 이내.
+  // 단순 합산만으로도 상한이 잘 맞음 (주말 4 + 평일 20 = 24).
+  const totalCap = people.reduce((s, p) => s + (p.double ? 4 : 2), 0);
+  return Math.min(TOTAL_SLOTS, totalCap);
+}
+function activeCount() { return people.length; }
+
+function updateStatus() {
+  const cap = maxCapacity();
+  const ban = $('infoBanner');
+  const st = $('status');
+  const stText = $('statusText');
+
+  st.classList.remove('green','yellow','red');
+  if (cap < TOTAL_SLOTS) {
+    st.classList.add('red');
+    stText.innerHTML = `최대 가능 배정 횟수가 ${cap}회입니다. ${TOTAL_SLOTS} 슬롯을 모두 채울 수 없습니다. (인원 추가 필요)`;
+  } else if (cap === TOTAL_SLOTS) {
+    st.classList.add('yellow');
+    stText.innerHTML = `최대 가능 배정 횟수가 정확히 ${TOTAL_SLOTS}회입니다.`;
+  } else {
+    st.classList.add('green');
+    stText.innerHTML = `충분한 인원이 확보되었습니다. 일정을 생성하세요.`;
+  }
+
+  // 인원 > 14: 우선순위 기반 제외 예고
+  if (activeCount() > TOTAL_SLOTS) {
+    const excess = activeCount() - TOTAL_SLOTS;
+    ban.style.display = '';
+    ban.textContent = `${excess}명이 슬롯 초과로 제외될 예정입니다 (우선순위 높은 순).`;
+  } else {
+    ban.style.display = 'none';
+  }
+}
+
+// ============================================================
+// 인원 추가 / 초기화
+// ============================================================
+$('addBtn').addEventListener('click', () => {
+  const input = $('newName');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  if (people.some(p => p.name === name)) {
+    alert('이미 같은 이름이 존재합니다.');
+    return;
+  }
+  people.push({
+    id: uid(),
+    name,
+    restricted: defaultRestrictedFor(name), // 12칸 배열
+    double: false, // index2 디폴트: 주 2회 OFF
+    priority: 0,
+    group: DEFAULT_GROUPS[name] || null,
+    rookie: false
+  });
+  input.value = '';
+  savePeople();
+  renderPeople();
+  updateStatus();
+});
+$('newName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('addBtn').click();
+});
+
+$('resetBtn').addEventListener('click', () => {
+  if (!confirm('인원과 설정을 모두 초기화합니다. 계속하시겠습니까?')) return;
+  initPeople();
+  savePeople();
+  renderPeople();
+  updateStatus();
+  $('result').style.display = 'none';
+});
+
+// ============================================================
+// 우선순위 기반 스킵 로직
+// 인원 > 14면 우선순위 높은 순으로 제외, 동순위는 랜덤.
+// 우선순위 0은 절대 제외하지 않음 (다른 선택지가 없는 경우 제외).
+// ============================================================
+function applySkipPriority(input) {
+  let active = input.slice();
+  const skipped = [];
+
+  // 1) priority > 0 부터 제외
+  while (active.length > TOTAL_SLOTS) {
+    const candidates = active.filter(p => p.priority > 0);
+    if (candidates.length === 0) break;
+    // 가장 높은 priority 찾기
+    const maxPr = Math.max(...candidates.map(p => p.priority));
+    const tied = shuffle(candidates.filter(p => p.priority === maxPr));
+    const pick = tied[0];
+    active = active.filter(p => p.id !== pick.id);
+    skipped.push({ person: pick, reason: 'priority' });
+  }
+
+  // 2) 그래도 > 14면 priority 0 중 무작위 제외 (불가피)
+  while (active.length > TOTAL_SLOTS) {
+    const tied = shuffle(active);
+    const pick = tied[0];
+    active = active.filter(p => p.id !== pick.id);
+    skipped.push({ person: pick, reason: 'forced' });
+  }
+
+  return { active, skipped };
+}
+
+// ============================================================
+// 일정 생성 — 백트래킹 + 그리디 폴백
+// ============================================================
+function emptySchedule() {
+  return Array.from({ length: SLOTS_COUNT }, () => [null, null]);
+}
+
+// 쌍 (a,b)의 기본 선호도. 높을수록 우선.
+//   1. 신병 + A/B 파트너          → 100  (최우선)
+//   2. 같은 그룹 쌍                →  10
+//   3. 신병 + C 파트너            →   1  (불가피한 fallback)
+//   4. 그 외                        →   0
+function pairPreference(a, b) {
+  const aIsRookie = !!a.rookie, bIsRookie = !!b.rookie;
+  if (aIsRookie || bIsRookie) {
+    const rookie  = aIsRookie ? a : b;
+    const partner = aIsRookie ? b : a;
+    // 신병끼리 묶이는 경우: 두 사람 모두 A/B여야 최우선, 아니면 일반 fallback
+    if (aIsRookie && bIsRookie) {
+      const okA = (a.group === 'A' || a.group === 'B') && (b.group === 'A' || b.group === 'B');
+      return okA ? 100 : 1;
+    }
+    if (partner.group === 'A' || partner.group === 'B') return 100;
+    if (partner.group === 'C') return 1;
+    return 1; // 그룹 미지정 파트너 — fallback
+  }
+  if (a.group && a.group === b.group) return 10;
+  return 0;
+}
+
+// 슬롯 컨텍스트를 고려한 선호도.
+// 월~금의 저녁 슬롯이면 — 같은 요일 아침에 들어간 인원과 동일한 쌍에 큰 가산점.
+// 모든 평일 슬롯에서 — 이미 주말에 들어간 인원이 페어에 있으면 큰 페널티 (overflow 최후 수단).
+function pairPreferenceForSlot(a, b, slotIdx, schedule) {
+  let base = pairPreference(a, b);
+  // 평일 아침 (짝수 인덱스 < 10): 페어 멤버가 같은 요일 저녁도 가능하면 보너스
+  // → 한 인원이 한 요일의 두 슬롯을 함께 잡도록 적극 유도
+  if (slotIdx < 10 && (slotIdx % 2) === 0) {
+    const eIdx = slotIdx + 1;
+    if (!a.restricted[eIdx]) base += 300;
+    if (!b.restricted[eIdx]) base += 300;
+  }
+  // 평일 저녁 (홀수 인덱스 < 10): 같은 요일 아침에 들어간 인원과 일치하면 큰 가산점
+  if (slotIdx < 10 && (slotIdx % 2) === 1) {
+    const morning = schedule[slotIdx - 1];
+    if (morning) {
+      const mIds = morning.filter(Boolean).map(p => p.id);
+      const matchCount = (mIds.includes(a.id) ? 1 : 0) + (mIds.includes(b.id) ? 1 : 0);
+      base += matchCount * 800; // 두 명 일치 → +1600, 한 명 → +800 (이전 500 보다 강화)
+    }
+  }
+  // 주말 overflow 는 canTake 에서 하드 차단되므로 별도 평일 페널티 없음.
+  // 주말 슬롯: 주 2회 ON 인원 우선
+  if (slotIdx >= 10) {
+    if (a.double) base += 50;
+    if (b.double) base += 50;
+  }
+  return base;
+}
+
+// 분기탐색(branch-and-bound) 백트래킹.
+// 첫 정답에서 멈추지 않고 시간 예산 안에서 가능한 모든 분기를 탐색하면서 best 갱신.
+// 미배정 슬롯 최소가 최우선이므로 (남은 슬롯 × 2) 더해도 best를 못 넘기면 가지치기.
+function solveBacktrack(active, timeBudgetMs = 600) {
+  const isWeekend = idx => idx >= 10;
+  const schedule = emptySchedule();
+  const counts = new Map(active.map(p => [p.id, 0]));
+  const wkndCounts = new Map(active.map(p => [p.id, 0]));
+  const start = Date.now();
+  let timedOut = false;
+
+  function capOf(p) { return p.double ? 4 : 2; }
+  function canTake(p, slotIdx) {
+    const tot = counts.get(p.id);
+    const wk  = wkndCounts.get(p.id);
+    if (tot >= capOf(p)) return false;
+    if (isWeekend(slotIdx)) { if (tot > 0) return false; }
+    else                    { if (wk > 0) return false; }
+    return true;
+  }
+  function take(p, slotIdx) {
+    counts.set(p.id, counts.get(p.id) + 1);
+    if (isWeekend(slotIdx)) wkndCounts.set(p.id, wkndCounts.get(p.id) + 1);
+  }
+  function untake(p, slotIdx) {
+    counts.set(p.id, counts.get(p.id) - 1);
+    if (isWeekend(slotIdx)) wkndCounts.set(p.id, wkndCounts.get(p.id) - 1);
+  }
+  function snapshot() { return schedule.map(s => s.slice()); }
+
+  // 평일 day 를 unit 으로 묶어 morning → evening 순서 보장 + 가용 인원 적은 unit 먼저
+  const units = [];
+  for (let i = 0; i < 5; i++) {
+    const c = active.filter(p => !p.restricted[i*2] && !p.restricted[i*2+1]).length;
+    units.push({ slots: [i*2, i*2+1], c: c + Math.random() * 0.001 });
+  }
+  for (let i = 10; i < SLOTS_COUNT; i++) {
+    units.push({ slots: [i], c: active.filter(p => !p.restricted[i]).length + Math.random() * 0.001 });
+  }
+  units.sort((a, b) => a.c - b.c);
+  const dayOrder = units.flatMap(u => u.slots);
+
+  let best = null;        // { schedule, score }
+  let currentFilled = 0;
+
+  function tryUpdateBest() {
+    const sc = scoreSchedule(schedule);
+    if (!best || compareSchedules(sc, best.score) < 0) {
+      best = { schedule: snapshot(), score: sc };
+    }
+  }
+
+  function recurse(idx) {
+    if (timedOut) return;
+    if (Date.now() - start > timeBudgetMs) { timedOut = true; return; }
+
+    if (idx === dayOrder.length) {
+      tryUpdateBest();
+      return;
+    }
+
+    // 가지치기: 남은 슬롯을 전부 채워도 best 의 filled 를 못 넘기면 탐색 중단
+    if (best) {
+      const remainingSlots = dayOrder.length - idx;
+      const maxReachable = currentFilled + remainingSlots * SLOTS_PER_DAY;
+      if (maxReachable < best.score.filled) return;
+    }
+
+    const day = dayOrder[idx];
+    const available = active.filter(p => !p.restricted[day] && canTake(p, day));
+
+    // 2명 이상 → 모든 쌍을 선호도 순으로 시도
+    if (available.length >= 2) {
+      const pairs = [];
+      for (let i = 0; i < available.length; i++) {
+        for (let j = i + 1; j < available.length; j++) {
+          pairs.push([available[i], available[j]]);
+        }
+      }
+      pairs.sort((p1, p2) =>
+        pairPreferenceForSlot(p2[0], p2[1], day, schedule) -
+        pairPreferenceForSlot(p1[0], p1[1], day, schedule)
+      );
+      for (const [a, b] of pairs) {
+        if (timedOut) return;
+        schedule[day] = [a, b];
+        take(a, day); take(b, day);
+        currentFilled += 2;
+        recurse(idx + 1);
+        currentFilled -= 2;
+        untake(a, day); untake(b, day);
+        schedule[day] = [null, null];
+      }
+    }
+
+    // 1명 only — best 갱신에 기여할 가능성 있을 때만 시도
+    // (이미 best.filled 가 만점이면 1명/0명 분기는 무의미)
+    if (best && best.score.filled >= dayOrder.length * SLOTS_PER_DAY) return;
+    for (const a of available) {
+      if (timedOut) return;
+      schedule[day] = [a, null];
+      take(a, day);
+      currentFilled += 1;
+      recurse(idx + 1);
+      currentFilled -= 1;
+      untake(a, day);
+      schedule[day] = [null, null];
+    }
+
+    // 0명 (이 슬롯 전체 비움)
+    if (timedOut) return;
+    schedule[day] = [null, null];
+    recurse(idx + 1);
+  }
+
+  recurse(0);
+  return best ? { schedule: best.schedule } : null;
+}
+
+// 일정 점수 — 비교 우선순위:
+//   1) 채워진 슬롯 수 (높을수록 좋음, "미배정 슬롯 최소" = 1순위)
+//   2) 평일에 1슬롯만 들어간 인원 수 (적을수록 좋음 — atomic 페어가 우선)
+//   3) 주말 인원 overflow 최소
+//   4) 같은 요일 아침↔저녁 연속성
+//   5) 한 번이라도 배정된 인원 수
+//   6) 쌍 선호도 합 (신병/같은그룹)
+function scoreSchedule(schedule) {
+  let filled = 0;
+  const idSet = new Set();
+  let pref = 0;
+  for (const day of schedule) {
+    for (const p of day) if (p) { filled++; idSet.add(p.id); }
+    if (day[0] && day[1]) pref += pairPreference(day[0], day[1]);
+  }
+  // 같은 요일 연속성
+  let continuity = 0;
+  for (let i = 0; i < 10; i += 2) {
+    const m = schedule[i].filter(Boolean).map(p => p.id);
+    const e = schedule[i+1].filter(Boolean).map(p => p.id);
+    for (const id of m) if (e.includes(id)) continuity++;
+  }
+  // 평일 1슬롯만 가진 인원 수 (atomic 깨진 인원)
+  const wkdayCount = new Map();
+  for (let i = 0; i < 10; i++) {
+    for (const p of schedule[i]) if (p) {
+      wkdayCount.set(p.id, (wkdayCount.get(p.id) || 0) + 1);
+    }
+  }
+  let weekdayLone = 0;
+  for (const n of wkdayCount.values()) if (n === 1) weekdayLone++;
+  // 주말 overflow (mutual exclusion 으로 이론상 항상 0이지만 score 유지를 위해 계산)
+  const weekendIds = new Set();
+  for (let i = 10; i < SLOTS_COUNT; i++) {
+    for (const p of schedule[i]) if (p) weekendIds.add(p.id);
+  }
+  let weekendOverflow = 0;
+  for (let i = 0; i < 10; i++) {
+    for (const p of schedule[i]) if (p && weekendIds.has(p.id)) weekendOverflow++;
+  }
+  return { filled, weekdayLone, weekendOverflow, continuity, people: idSet.size, pref };
+}
+function compareSchedules(a, b) {
+  if (a.filled !== b.filled) return b.filled - a.filled;
+  if (a.weekdayLone !== b.weekdayLone) return a.weekdayLone - b.weekdayLone;
+  if (a.weekendOverflow !== b.weekendOverflow) return a.weekendOverflow - b.weekendOverflow;
+  if (a.continuity !== b.continuity) return b.continuity - a.continuity;
+  if (a.people !== b.people) return b.people - a.people;
+  return b.pref - a.pref;
+}
+
+
+function solveGreedy(active) {
+  // 그리디 — 한 요일의 아침/저녁을 같은 인원이 책임지는 것이 1순위.
+  // Phase 1: 평일 day 를 atomic 단위로 처리 (2명 × 2슬롯 = 4 person-slot)
+  // Phase 2: 남은 평일 슬롯을 슬롯 단위로 보완 (atomic 으로 못 채운 부분)
+  // Phase 3: 주말 슬롯
+  // Phase 4: last-resort fallback (주말 인원 평일 overflow)
+  const isWeekend = idx => idx >= 10;
+  const schedule = emptySchedule();
+  const counts = new Map(active.map(p => [p.id, 0]));
+  const wkndCounts = new Map(active.map(p => [p.id, 0]));
+
+  function capOf(p) { return p.double ? 4 : 2; }
+  // 주말/평일 mutual exclusion — 한 사람당 둘 중 하나만
+  function canTake(p, slotIdx) {
+    if (counts.get(p.id) >= capOf(p)) return false;
+    if (isWeekend(slotIdx)) {
+      if (counts.get(p.id) > 0) return false;     // 평일에 이미 들어간 사람은 주말 불가
+    } else {
+      if (wkndCounts.get(p.id) > 0) return false; // 주말에 이미 들어간 사람은 평일 불가
+    }
+    return true;
+  }
+  function place(p, slotIdx, slotPos) {
+    schedule[slotIdx][slotPos] = p;
+    counts.set(p.id, counts.get(p.id) + 1);
+    if (isWeekend(slotIdx)) wkndCounts.set(p.id, wkndCounts.get(p.id) + 1);
+  }
+
+  // ---- Phase 1: 평일 atomic 배정 ----
+  // 각 평일을 1개 unit 으로 보고, 2명을 골라 그 요일의 morning + evening 모두 동일 인원이
+  // 들어가게 한다. 가용 인원(양쪽 다 가능 + cap 2 이상 남음)이 적은 요일부터 처리.
+  const weekdayOrder = [0, 1, 2, 3, 4];
+  weekdayOrder.sort((a, b) => {
+    const ca = active.filter(p => !p.restricted[a*2] && !p.restricted[a*2+1]).length;
+    const cb = active.filter(p => !p.restricted[b*2] && !p.restricted[b*2+1]).length;
+    if (ca !== cb) return ca - cb;
+    return Math.random() - 0.5;
+  });
+  for (const dayIdx of weekdayOrder) {
+    const mIdx = dayIdx * 2, eIdx = dayIdx * 2 + 1;
+    // 양쪽 슬롯 모두 가능 + 남은 cap 2 이상 + 주말 미사용자
+    const both = active.filter(p =>
+      !p.restricted[mIdx] && !p.restricted[eIdx] &&
+      capOf(p) - counts.get(p.id) >= 2 &&
+      wkndCounts.get(p.id) === 0
+    );
+    both.sort((a, b) => {
+      // 1) ON 이고 이미 1 atomic day 끝낸 사람 최우선 (2일차 atomic 으로 cap 다 쓰도록)
+      const aReady = a.double && counts.get(a.id) === 2 ? 0 : 1;
+      const bReady = b.double && counts.get(b.id) === 2 ? 0 : 1;
+      if (aReady !== bReady) return aReady - bReady;
+      // 2) ON 이고 아직 시작 안 했으면 OFF 보다 먼저 (어차피 2일 해야 cap 채움)
+      const aFresh = a.double && counts.get(a.id) === 0 ? 0 : 1;
+      const bFresh = b.double && counts.get(b.id) === 0 ? 0 : 1;
+      if (aFresh !== bFresh) return aFresh - bFresh;
+      // 3) 그 외엔 counts 적은 사람 우선 (공정)
+      const dc = counts.get(a.id) - counts.get(b.id);
+      if (dc !== 0) return dc;
+      return Math.random() - 0.5;
+    });
+    // 위에서 2명을 골라 morning + evening 양쪽에 동일하게 배정
+    for (let pos = 0; pos < 2; pos++) {
+      const p = both[pos];
+      if (!p) break;
+      place(p, mIdx, pos);
+      place(p, eIdx, pos);
+    }
+  }
+
+  // ---- Phase 2: atomic 으로 못 채운 평일 슬롯 보완 ----
+  // 2-1) 같은 요일에 양쪽 슬롯이 모두 비어 있으면 한 명을 골라 두 슬롯 모두에 배정 (atomic).
+  for (let dayIdx = 0; dayIdx < 5; dayIdx++) {
+    const mIdx = dayIdx * 2, eIdx = dayIdx * 2 + 1;
+    while (
+      schedule[mIdx].findIndex(x => x === null) >= 0 &&
+      schedule[eIdx].findIndex(x => x === null) >= 0
+    ) {
+      const cands = active.filter(p =>
+        !p.restricted[mIdx] && !p.restricted[eIdx] &&
+        capOf(p) - counts.get(p.id) >= 2 &&
+        wkndCounts.get(p.id) === 0 &&
+        !schedule[mIdx].some(x => x && x.id === p.id) &&
+        !schedule[eIdx].some(x => x && x.id === p.id)
+      );
+      if (cands.length === 0) break;
+      cands.sort((a, b) => {
+        const dc = counts.get(a.id) - counts.get(b.id);
+        if (dc !== 0) return dc;
+        return Math.random() - 0.5;
+      });
+      const p = cands[0];
+      const mPos = schedule[mIdx].findIndex(x => x === null);
+      const ePos = schedule[eIdx].findIndex(x => x === null);
+      place(p, mIdx, mPos);
+      place(p, eIdx, ePos);
+    }
+  }
+  // 2-2) atomic 으로도 못 채운 단일 슬롯 — single fill 은 평일 1슬롯 인원을 만드는
+  //      부작용이 있으므로 마지막 보완 단계로만 수행 (canTake + 주말인원 제외).
+  for (let d = 0; d < 10; d++) {
+    while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
+      const cands = active.filter(p =>
+        !p.restricted[d] && canTake(p, d) &&
+        !schedule[d].some(x => x && x.id === p.id) &&
+        wkndCounts.get(p.id) === 0
+      );
+      if (cands.length === 0) break;
+      cands.sort((a, b) => {
+        if (d < 10 && (d % 2) === 1) {
+          const morning = schedule[d - 1];
+          const aM = morning.some(x => x && x.id === a.id) ? 0 : 1;
+          const bM = morning.some(x => x && x.id === b.id) ? 0 : 1;
+          if (aM !== bM) return aM - bM;
+        }
+        const dc = counts.get(a.id) - counts.get(b.id);
+        if (dc !== 0) return dc;
+        return Math.random() - 0.5;
+      });
+      const p = cands[0];
+      const pos = schedule[d].findIndex(x => x === null);
+      place(p, d, pos);
+    }
+  }
+
+  // ---- Phase 3: 주말 슬롯 — 주 2회 ON 인원 우선 배치 ----
+  for (let d = 10; d < SLOTS_COUNT; d++) {
+    while (schedule[d].filter(Boolean).length < SLOTS_PER_DAY) {
+      const cands = active.filter(p =>
+        !p.restricted[d] && canTake(p, d) &&
+        !schedule[d].some(x => x && x.id === p.id)
+      );
+      if (cands.length === 0) break;
+      cands.sort((a, b) => {
+        // 주 2회 ON 우선
+        const ad = a.double ? 0 : 1, bd = b.double ? 0 : 1;
+        if (ad !== bd) return ad - bd;
+        const dc = counts.get(a.id) - counts.get(b.id);
+        if (dc !== 0) return dc;
+        return Math.random() - 0.5;
+      });
+      const p = cands[0];
+      const pos = schedule[d].findIndex(x => x === null);
+      place(p, d, pos);
+    }
+  }
+
+  // (이전에 있던 'Phase 4 last-resort: 주말 인원의 평일 overflow' 단계는 제거.
+  //  주말에 한 번 들어간 인원은 어떠한 평일 슬롯에도 넣지 않음.)
+
+  const assignedIds = new Set();
+  for (const day of schedule) for (const p of day) if (p) assignedIds.add(p.id);
+  const failed = active
+    .filter(p => !assignedIds.has(p.id))
+    .map(p => ({
+      person: p,
+      reason: p.restricted.every(x => x) ? '모든 시간 슬롯 제한됨' : '슬롯 우선 채움으로 자리 없음'
+    }));
+
+  return { schedule, failed };
+}
+
+function generate() {
+  // 1단계: 우선순위 스킵
+  const { active, skipped } = applySkipPriority(people);
+
+  // 2단계: 그리디 다회 시도로 초기 best 후보 확보 (branch-and-bound pruning 용 lower bound)
+  let res = null;
+  let bestScore = null;
+  const grAttempts = 30;
+  for (let t = 0; t < grAttempts; t++) {
+    const gr = solveGreedy(active);
+    const sc = scoreSchedule(gr.schedule);
+    if (!bestScore || compareSchedules(sc, bestScore) < 0) {
+      bestScore = sc;
+      res = { schedule: gr.schedule };
+    }
+  }
+
+  // 3단계: branch-and-bound 백트래킹 — 시간 예산 안에서 best 갱신
+  //        그리디 best 를 lower bound 로 들고 가지치기에 활용 (실제 best 는 함수 안에서 새로 추적)
+  const btAttempts = 3;
+  const btBudget = 1500;
+  for (let t = 0; t < btAttempts; t++) {
+    const r = solveBacktrack(active, btBudget);
+    if (!r) continue;
+    const sc = scoreSchedule(r.schedule);
+    if (!bestScore || compareSchedules(sc, bestScore) < 0) {
+      bestScore = sc;
+      res = r;
+    }
+    if (sc.filled === TOTAL_SLOTS) break; // 완전 채움이면 더 시도 불필요
+  }
+
+  // 백트래킹/그리디 모두 결과가 없는 극단적인 케이스 안전망 (사실상 도달하지 않음)
+  if (!res) {
+    res = { schedule: emptySchedule() };
+  }
+
+  // active 중 한 번도 배정되지 못한 인원 = 실패 인원
+  const assignedIds = new Set();
+  for (const day of res.schedule) for (const p of day) if (p) assignedIds.add(p.id);
+  const failed = active
+    .filter(p => !assignedIds.has(p.id))
+    .map(p => {
+      const allRestricted = p.restricted.every(x => x);
+      return {
+        person: p,
+        reason: allRestricted ? '모든 시간 슬롯 제한됨' : '슬롯 우선 채움으로 자리 없음'
+      };
+    });
+
+  // 3단계: 결과 통계
+  let fullDays = 0, emptySlots = 0;
+  for (const day of res.schedule) {
+    const filled = day.filter(Boolean).length;
+    if (filled === SLOTS_PER_DAY) fullDays++;
+    emptySlots += SLOTS_PER_DAY - filled;
+  }
+
+  // 누가 두 번 배정되었는지 카운트
+  const assignCount = new Map();
+  for (const day of res.schedule) {
+    for (const p of day) {
+      if (!p) continue;
+      assignCount.set(p.id, (assignCount.get(p.id) || 0) + 1);
+    }
+  }
+
+  lastResult = {
+    schedule: res.schedule,
+    skipped,
+    failed,
+    fullDays,
+    emptySlots,
+    assignCount,
+    active
+  };
+
+  renderResult(lastResult);
+}
+
+// ============================================================
+// 결과 렌더
+// ============================================================
+function isWeekendSlot(idx) { return idx >= 10; }
+
+// ============================================================
+// 결과 화면 편집 모드
+// ============================================================
+let editMode = false;
+let selectedSlot = null; // { slotIdx, pos } 또는 null
+
+function toggleEditMode() {
+  editMode = !editMode;
+  selectedSlot = null;
+  const btn = $('editBtn');
+  if (btn) btn.textContent = editMode ? '편집 종료' : '편집';
+  if (lastResult) renderResult(lastResult);
+}
+
+// 선택된 슬롯과 (targetSlotIdx, targetPos) 사이 스왑이 제한사항을 만족하는지
+function isCompatibleSwap(targetSlotIdx, targetPos) {
+  if (!selectedSlot) return false;
+  if (selectedSlot.slotIdx === targetSlotIdx && selectedSlot.pos === targetPos) return false;
+  const aP = lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos];
+  const bP = lastResult.schedule[targetSlotIdx][targetPos];
+  // aP 가 target slot 에 들어갈 수 있어야 함 (요일 제한 + 같은 슬롯 중복 금지)
+  if (aP) {
+    if (aP.restricted[targetSlotIdx]) return false;
+    if (lastResult.schedule[targetSlotIdx].some((x, i) => x && x.id === aP.id && i !== targetPos)) return false;
+  }
+  // bP 가 selected slot 에 들어갈 수 있어야 함
+  if (bP) {
+    if (bP.restricted[selectedSlot.slotIdx]) return false;
+    if (lastResult.schedule[selectedSlot.slotIdx].some((x, i) => x && x.id === bP.id && i !== selectedSlot.pos)) return false;
+  }
+  return true;
+}
+
+function performSwap(targetSlotIdx, targetPos) {
+  if (!selectedSlot) return;
+  const a = lastResult.schedule[selectedSlot.slotIdx];
+  const b = lastResult.schedule[targetSlotIdx];
+  const tmp = a[selectedSlot.pos];
+  a[selectedSlot.pos] = b[targetPos];
+  b[targetPos] = tmp;
+  selectedSlot = null;
+  recomputeAndRender();
+}
+
+function recomputeStats() {
+  if (!lastResult) return;
+  const ac = new Map();
+  let emptySlots = 0;
+  for (const day of lastResult.schedule) {
+    for (const p of day) if (p) ac.set(p.id, (ac.get(p.id) || 0) + 1);
+    emptySlots += SLOTS_PER_DAY - day.filter(Boolean).length;
+  }
+  lastResult.assignCount = ac;
+  lastResult.emptySlots = emptySlots;
+}
+
+function recomputeAndRender() {
+  recomputeStats();
+  renderResult(lastResult);
+}
+
+function handleSlotClick(slotIdx, pos) {
+  if (!editMode) return;
+  if (!selectedSlot) {
+    selectedSlot = { slotIdx, pos };
+    renderResult(lastResult);
+    return;
+  }
+  if (selectedSlot.slotIdx === slotIdx && selectedSlot.pos === pos) {
+    selectedSlot = null;
+    renderResult(lastResult);
+    return;
+  }
+  if (isCompatibleSwap(slotIdx, pos)) {
+    performSwap(slotIdx, pos);
+  }
+  // 비호환(swap-bad) 슬롯은 클릭 무시
+}
+
+function renderEditPanel() {
+  const panel = $('editPanel');
+  if (!panel) return;
+  if (!editMode || !selectedSlot) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.style.display = '';
+  panel.innerHTML = '';
+
+  const ts = TIME_SLOTS[selectedSlot.slotIdx];
+  const currentP = lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos];
+
+  const header = document.createElement('div');
+  header.className = 'edit-panel-header';
+  header.textContent = `${ts.label} 슬롯 ${selectedSlot.pos + 1} 편집 — 현재: ${currentP ? currentP.name : '미배정'}`;
+  panel.appendChild(header);
+
+  const help = document.createElement('div');
+  help.className = 'edit-panel-help';
+  help.textContent = '· 아래 인원을 누르면 이 자리에 배정됩니다.   · 일정 표의 초록 테두리 슬롯을 누르면 스왑.';
+  panel.appendChild(help);
+
+  // 제거 버튼 (배정된 슬롯에만)
+  if (currentP) {
+    const remRow = document.createElement('div');
+    remRow.style.marginBottom = '8px';
+    const rem = document.createElement('button');
+    rem.className = 'btn';
+    rem.style.cssText = 'background:#FEE2E2;color:var(--red);padding:6px 12px;font-weight:500;font-size:13px;';
+    rem.textContent = '✕ ' + currentP.name + ' 제거';
+    rem.addEventListener('click', () => {
+      lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos] = null;
+      selectedSlot = null;
+      recomputeAndRender();
+    });
+    remRow.appendChild(rem);
+    panel.appendChild(remRow);
+  }
+
+  // 후보 목록 — 그 슬롯에 제한 없는 인원, 같은 슬롯 다른 칸 중복 제외, 현재 인물 제외
+  const candLabel = document.createElement('div');
+  candLabel.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:6px;';
+  candLabel.textContent = '이 자리에 넣을 수 있는 인원 (요일 제한 없음)';
+  panel.appendChild(candLabel);
+
+  const list = document.createElement('div');
+  list.className = 'edit-candidates';
+  const cands = people.filter(p =>
+    !p.restricted[selectedSlot.slotIdx] &&
+    (!currentP || p.id !== currentP.id) &&
+    !lastResult.schedule[selectedSlot.slotIdx].some((x, i) => x && x.id === p.id && i !== selectedSlot.pos)
+  );
+  if (cands.length === 0) {
+    const none = document.createElement('div');
+    none.style.cssText = 'color:var(--muted);font-size:12px;';
+    none.textContent = '가능한 인원이 없습니다.';
+    list.appendChild(none);
+  } else {
+    for (const p of cands) {
+      const chip = document.createElement('button');
+      chip.className = 'cand-chip';
+      chip.textContent = p.name;
+      chip.addEventListener('click', () => {
+        lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos] = p;
+        selectedSlot = null;
+        recomputeAndRender();
+      });
+      list.appendChild(chip);
+    }
+  }
+  panel.appendChild(list);
+
+  // 선택 취소
+  const actions = document.createElement('div');
+  actions.className = 'edit-panel-actions';
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-secondary';
+  cancel.textContent = '선택 취소';
+  cancel.addEventListener('click', () => { selectedSlot = null; renderResult(lastResult); });
+  actions.appendChild(cancel);
+  panel.appendChild(actions);
+}
+
+// 한 (요일, 시간대) 셀 — 슬롯 인덱스가 -1 이면 "—" (해당 시간대 없음, 토/일 아침 칸)
+function buildShiftCell(slotIdx, r, trueCrossover) {
+  const td = document.createElement('td');
+  if (slotIdx < 0) {
+    td.className = 'cell-na';
+    td.textContent = '—';
+    return td;
+  }
+  const slot = r.schedule[slotIdx];
+  const filled = slot.filter(Boolean).length;
+  if (filled === 0)            td.className = 'cell-empty';
+  else if (filled < SLOTS_PER_DAY) td.className = 'cell-partial';
+  else                         td.className = 'cell-full';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'cell-chips';
+
+  if (editMode) {
+    // 편집 모드: 슬롯 position 별로 클릭 가능한 .slot-pos 요소 렌더
+    for (let pos = 0; pos < SLOTS_PER_DAY; pos++) {
+      wrap.appendChild(buildSlotPos(slotIdx, pos, r));
+    }
+  } else {
+    // 보기 모드: 기존 통합 렌더 (chip + 미배정 블록 + 가능 인원 목록)
+    const filledList = [];
+    for (let s = 0; s < SLOTS_PER_DAY; s++) {
+      const p = slot[s];
+      if (!p) continue;
+      filledList.push(p);
+      const chip = document.createElement('span');
+      const cnt = r.assignCount.get(p.id) || 0;
+      const heavy = !!p.double && cnt >= 3;
+      chip.className = 'person-chip' + (heavy ? ' crossover' : '');
+      chip.textContent = p.name;
+      wrap.appendChild(chip);
+    }
+    const emptyCount = SLOTS_PER_DAY - filledList.length;
+    if (emptyCount > 0) {
+      const block = document.createElement('span');
+      block.className = 'unassigned-wrap';
+      const label = document.createElement('span');
+      label.className = 'unassigned';
+      label.textContent = emptyCount > 1 ? `미배정 (${emptyCount})` : '미배정';
+      block.appendChild(label);
+      const cands = people.filter(p2 =>
+        !p2.restricted[slotIdx] && !filledList.some(x => x.id === p2.id)
+      );
+      if (cands.length > 0) {
+        const list = document.createElement('span');
+        list.className = 'unassigned-cands';
+        list.textContent = '가능: ' + cands.map(c => c.name).join(', ');
+        block.appendChild(list);
+      }
+      wrap.appendChild(block);
+    }
+  }
+  td.appendChild(wrap);
+  return td;
+}
+
+// 편집 모드용 — 슬롯 position 1칸 (클릭 가능 + 선택/스왑 가능 테두리 표시)
+function buildSlotPos(slotIdx, pos, r) {
+  const p = lastResult.schedule[slotIdx][pos];
+  const el = document.createElement('span');
+  el.className = 'slot-pos';
+  if (p) {
+    el.classList.add('chip-wrap');
+    const cnt = r.assignCount.get(p.id) || 0;
+    if (!!p.double && cnt >= 3) el.classList.add('crossover');
+    el.appendChild(document.createTextNode(p.name));
+  } else {
+    el.classList.add('empty-pos');
+    el.appendChild(document.createTextNode('미배정'));
+  }
+  // 선택 / 스왑 가능 / 스왑 불가 테두리
+  if (selectedSlot) {
+    if (selectedSlot.slotIdx === slotIdx && selectedSlot.pos === pos) {
+      el.classList.add('selected');
+    } else if (isCompatibleSwap(slotIdx, pos)) {
+      el.classList.add('swap-ok');
+    } else {
+      el.classList.add('swap-bad');
+    }
+  }
+  el.addEventListener('click', () => handleSlotClick(slotIdx, pos));
+  return el;
+}
+
+function renderResult(r) {
+  $('result').style.display = '';
+  const body = $('scheduleBody');
+  body.innerHTML = '';
+
+  // 평일 아침/저녁 칼럼 정렬:
+  // 한 명이라도 겹치면, 그 사람이 같은 column 에 오도록 evening 두 슬롯을 swap.
+  // 일반적으로 "현재 정렬 vs swap 정렬" 중 같은-column 일치 수가 더 많은 쪽 채택.
+  function alignScore(m, e) {
+    let s = 0;
+    if (m[0] && e[0] && m[0].id === e[0].id) s++;
+    if (m[1] && e[1] && m[1].id === e[1].id) s++;
+    return s;
+  }
+  for (let i = 0; i < 10; i += 2) {
+    const m = r.schedule[i];
+    const e = r.schedule[i+1];
+    if (!e[0] && !e[1]) continue;
+    const cur = alignScore(m, e);
+    const swp = alignScore(m, [e[1], e[0]]);
+    if (swp > cur) [e[0], e[1]] = [e[1], e[0]];
+  }
+
+  // 주말 + 평일 둘 다 들어간 인원 (현재 정책에서는 mutual exclusion 으로 발생하지 않지만
+  //  yellow chip 강조 로직이 이 set 을 사용하므로 계산은 유지)
+  const weekdayIds = new Set();
+  const weekendIds = new Set();
+  for (let i = 0; i < SLOTS_COUNT; i++) {
+    for (const p of r.schedule[i]) if (p) {
+      if (i >= 10) weekendIds.add(p.id); else weekdayIds.add(p.id);
+    }
+  }
+  const trueCrossover = new Set();
+  for (const id of weekendIds) if (weekdayIds.has(id)) trueCrossover.add(id);
+
+  // 한 행에 [요일 | 아침 | 저녁] — 월~금 5행 + 토 + 일 = 7행
+  const WEEK_DAY_LABELS = ['월','화','수','목','금','토','일'];
+  for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+    const tr = document.createElement('tr');
+    const dayName = WEEK_DAY_LABELS[dayIdx];
+
+    const dayTd = document.createElement('td');
+    dayTd.className = 'day-label';
+    dayTd.textContent = dayName;
+    tr.appendChild(dayTd);
+
+    // 평일: 아침 = 2*i, 저녁 = 2*i+1
+    // 토 = 10, 일 = 11. 토/일은 아침 슬롯 없음 ("—" 표시).
+    let morningIdx = -1, eveningIdx = -1;
+    if (dayIdx < 5) {
+      morningIdx = dayIdx * 2;
+      eveningIdx = dayIdx * 2 + 1;
+    } else {
+      eveningIdx = 10 + (dayIdx - 5);
+    }
+
+    tr.appendChild(buildShiftCell(morningIdx, r, trueCrossover));
+    tr.appendChild(buildShiftCell(eveningIdx, r, trueCrossover));
+    body.appendChild(tr);
+  }
+
+  // 통계 카드
+  const summary = $('summary');
+  summary.innerHTML = '';
+  function stat(label, value, cls) {
+    const div = document.createElement('div');
+    div.className = 'stat' + (cls ? ' ' + cls : '');
+    div.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
+    summary.appendChild(div);
+  }
+  stat('미배정 슬롯', `${r.emptySlots}개`, r.emptySlots === 0 ? 'ok' : 'warn');
+  stat('배정된 인원', `${r.assignCount.size}명`);
+
+  // 우선순위로 제외된 인원
+  const exDiv = $('exclusionList');
+  exDiv.innerHTML = '';
+  if (r.skipped.length > 0) {
+    const wrap = document.createElement('div');
+    wrap.className = 'exclusion-list';
+    const h = document.createElement('h4');
+    h.textContent = '이번 주 미배정 인원 (우선순위 기반)';
+    wrap.appendChild(h);
+    const ul = document.createElement('ul');
+    for (const s of r.skipped) {
+      const li = document.createElement('li');
+      const reason = s.reason === 'priority'
+        ? `우선순위 ${s.person.priority} - 슬롯 초과로 제외`
+        : `슬롯 초과로 부득이 제외 (우선순위 0)`;
+      li.innerHTML = `<strong>${s.person.name}</strong> <span class="badge-skip">제외</span> <span style="color:var(--muted);font-size:12px;">${reason}</span>`;
+      ul.appendChild(li);
+    }
+    wrap.appendChild(ul);
+    exDiv.appendChild(wrap);
+  }
+
+  // 제한 때문에 배정 실패
+  const failDiv = $('failList');
+  failDiv.innerHTML = '';
+  if (r.failed.length > 0) {
+    const wrap = document.createElement('div');
+    wrap.className = 'fail-list';
+    const h = document.createElement('h4');
+    h.textContent = '배정 실패 인원 (요일 제한/충돌)';
+    wrap.appendChild(h);
+    const ul = document.createElement('ul');
+    for (const f of r.failed) {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${f.person.name}</strong>: <span style="color:var(--muted);font-size:12px;">${f.reason}</span>`;
+      ul.appendChild(li);
+    }
+    wrap.appendChild(ul);
+    failDiv.appendChild(wrap);
+  }
+
+  // 편집 모드 패널
+  renderEditPanel();
+
+  // 결과 영역으로 스크롤 (편집 중에는 스크롤 점프 안 함)
+  if (!editMode) $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// 생성 중 상태 표시 — 버튼 텍스트/disabled + setTimeout 으로 UI 먼저 그리고 무거운 작업 실행
+function runGenerate() {
+  const gBtn = $('generateBtn');
+  const rBtn = $('regenBtn');
+  const gOriginal = gBtn.textContent;
+  const rOriginal = rBtn.textContent;
+  gBtn.disabled = true; gBtn.textContent = '생성 중…';
+  rBtn.disabled = true; rBtn.textContent = '생성 중…';
+  // 두 단계 rAF 후 setTimeout 으로 paint 보장
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    setTimeout(() => {
+      try { generate(); }
+      finally {
+        gBtn.disabled = false; gBtn.textContent = gOriginal;
+        rBtn.disabled = false; rBtn.textContent = rOriginal;
+      }
+    }, 0);
+  }));
+}
+
+$('generateBtn').addEventListener('click', () => {
+  if (people.length === 0) { alert('인원이 없습니다. 먼저 인원을 추가하세요.'); return; }
+  if (maxCapacity() < TOTAL_SLOTS) {
+    if (!confirm(`최대 ${maxCapacity()}회 배정 가능합니다. 일부 슬롯이 미배정될 수 있는데, 그래도 생성하시겠습니까?`)) return;
+  }
+  runGenerate();
+});
+$('regenBtn').addEventListener('click', () => {
+  // 재생성 시 편집 모드 자동 해제
+  editMode = false; selectedSlot = null;
+  $('editBtn').textContent = '편집';
+  runGenerate();
+});
+$('editBtn').addEventListener('click', toggleEditMode);
+$('backBtn').addEventListener('click', () => {
+  editMode = false; selectedSlot = null;
+  $('editBtn').textContent = '편집';
+  $('result').style.display = 'none';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+// ============================================================
+// 헤더 우상단 "updated: YYYY-MM-DD" — 파일이 변경될 때마다 아래 상수를
+// 그 시점 한국 표준시(KST) 날짜로 직접 수정해서 유지한다.
+// ============================================================
+const UPDATED_AT = '2026-05-26'; // KST, HTML 파일 변경 시 함께 갱신
+(function showUpdated() {
+  $('updatedLabel').textContent = `updated: ${UPDATED_AT}`;
+})();
+
+// ============================================================
+// 부팅 — localStorage에 저장된 인원이 있으면 복원, 없으면 디폴트
+// ============================================================
+const saved = loadPeople();
+if (saved && saved.length > 0) {
+  people = saved;
+  // 복원된 인원 중 최대 id 다음부터 새 id 발급
+  nextId = Math.max(0, ...people.map(p => p.id)) + 1;
+} else {
+  initPeople();
+  savePeople();
+}
+renderPeople();
+updateStatus();
+</script>
+</body>
+</html>
