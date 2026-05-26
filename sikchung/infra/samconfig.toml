@@ -1,0 +1,16 @@
+version = 0.1
+
+[default.global.parameters]
+region = "ap-northeast-2"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+stack_name         = "sikchung"
+resolve_s3         = true
+capabilities       = "CAPABILITY_IAM"
+region             = "ap-northeast-2"
+no_confirm_changeset     = true
+no_fail_on_empty_changeset = true

@@ -1,0 +1,117 @@
+name: Deploy Sikchung Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sikchung/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js 20 ──────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: sikchung/backend/package-lock.json
+
+      # ── 3. AWS credentials ─────────────────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ── 4. SAM CLI ─────────────────────────────────────────────────────────
+      - name: Install SAM CLI
+        run: pip install aws-sam-cli
+
+      # ── 5. Install backend dependencies ───────────────────────────────────
+      - name: Install backend dependencies
+        working-directory: sikchung/backend
+        run: npm ci
+
+      # ── 6. SAM build ───────────────────────────────────────────────────────
+      - name: SAM build
+        working-directory: sikchung/infra
+        run: sam build
+
+      # ── 7. SAM deploy ──────────────────────────────────────────────────────
+      - name: SAM deploy
+        working-directory: sikchung/infra
+        run: sam deploy
+
+      # ── 8~10. 5단계에서 활성화 ─────────────────────────────────────────────
+      # - name: Extract CloudFormation outputs
+      #   id: cfn
+      #   run: |
+      #     API=$(aws cloudformation describe-stacks \
+      #             --stack-name sikchung \
+      #             --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+      #             --output text)
+      #     CF_DIST=$(aws cloudformation describe-stacks \
+      #                 --stack-name sikchung \
+      #                 --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDomain'].OutputValue" \
+      #                 --output text)
+      #     echo "api_endpoint=$API"      >> $GITHUB_OUTPUT
+      #     echo "cloudfront_domain=$CF_DIST" >> $GITHUB_OUTPUT
+
+      # - name: Update Cognito callback URL
+      #   run: |
+      #     CLIENT_ID=$(aws cloudformation describe-stacks \
+      #                   --stack-name sikchung \
+      #                   --query "Stacks[0].Outputs[?OutputKey=='ClientId'].OutputValue" \
+      #                   --output text)
+      #     POOL_ID=$(aws cloudformation describe-stacks \
+      #                 --stack-name sikchung \
+      #                 --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
+      #                 --output text)
+      #     CF_URL="https://${{ steps.cfn.outputs.cloudfront_domain }}"
+      #     aws cognito-idp update-user-pool-client \
+      #       --user-pool-id "$POOL_ID" \
+      #       --client-id    "$CLIENT_ID" \
+      #       --callback-urls "$CF_URL/callback" \
+      #       --logout-urls   "$CF_URL/"
+
+      # - name: Generate frontend config
+      #   run: |
+      #     cat > sikchung/frontend/config.js <<EOF
+      #     window.APP_CONFIG = {
+      #       apiEndpoint:    "${{ steps.cfn.outputs.api_endpoint }}",
+      #       cognitoDomain:  "...",
+      #       clientId:       "...",
+      #       redirectUri:    "https://${{ steps.cfn.outputs.cloudfront_domain }}/callback",
+      #     };
+      #     EOF
+
+      # - name: Upload frontend to S3
+      #   run: |
+      #     BUCKET=$(aws cloudformation describe-stacks \
+      #               --stack-name sikchung \
+      #               --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
+      #               --output text)
+      #     aws s3 sync sikchung/frontend/ s3://$BUCKET/ --delete
+
+      # - name: Invalidate CloudFront cache
+      #   run: |
+      #     DIST_ID=$(aws cloudformation describe-stacks \
+      #                 --stack-name sikchung \
+      #                 --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+      #                 --output text)
+      #     aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"
