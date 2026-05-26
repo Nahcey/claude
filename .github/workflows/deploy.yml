@@ -38,7 +38,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      # ── 4. SAM CLI ─────────────────────────────────────────────────────────
+      # ── 4. SAM CLI (pip 캐시로 재설치 시간 단축) ──────────────────────────
+      - name: Cache pip (SAM CLI)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-sam-${{ hashFiles('.github/workflows/deploy.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-sam-
+
       - name: Install SAM CLI
         run: pip install aws-sam-cli
 

@@ -148,8 +148,12 @@ Resources:
             Method: PUT
             Path: /me
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource: !GetAtt SikchungDataTable.Arn
 
   MembersFunction:
     Type: AWS::Serverless::Function

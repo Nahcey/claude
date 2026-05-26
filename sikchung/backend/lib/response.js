@@ -1,15 +1,26 @@
 'use strict';
-// Lambda HTTP API 응답 헬퍼
-// Content-Type은 항상 application/json
 
-const HEADERS = { 'Content-Type': 'application/json' };
+// TODO(5단계): AllowOrigin을 CloudFront 배포 도메인으로 제한
+//              예: 'https://d1234abcd.cloudfront.net'
+const HEADERS = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+};
 
-// TODO: const ok         = (body)    => ({ statusCode: 200, headers: HEADERS, body: JSON.stringify(body) });
-// TODO: const created    = (body)    => ({ statusCode: 201, headers: HEADERS, body: JSON.stringify(body) });
-// TODO: const badRequest = (msg)     => ({ statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: msg }) });
-// TODO: const forbidden  = ()        => ({ statusCode: 403, headers: HEADERS, body: JSON.stringify({ error: 'Forbidden' }) });
-// TODO: const notFound   = ()        => ({ statusCode: 404, headers: HEADERS, body: JSON.stringify({ error: 'Not found' }) });
-// TODO: const serverError = (msg)    => ({ statusCode: 500, headers: HEADERS, body: JSON.stringify({ error: msg }) });
+const res = (statusCode, body) => ({
+  statusCode,
+  headers: HEADERS,
+  body: JSON.stringify(body),
+});
 
-// TODO: module.exports = { ok, created, badRequest, forbidden, notFound, serverError };
-module.exports = {};
+const ok           = (body)              => res(200, body);
+const created      = (body)              => res(201, body);
+const badRequest   = (msg)               => res(400, { error: msg });
+const unauthorized = (msg = 'Unauthorized') => res(401, { error: msg });
+const forbidden    = (msg = 'Forbidden') => res(403, { error: msg });
+const notFound     = (msg = 'Not found') => res(404, { error: msg });
+const serverError  = (msg = 'Internal server error') => res(500, { error: msg });
+
+module.exports = { ok, created, badRequest, unauthorized, forbidden, notFound, serverError };
