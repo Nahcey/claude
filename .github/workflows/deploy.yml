@@ -2,7 +2,7 @@ name: Deploy Sikchung Backend
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/hopeful-noether-tJoCC']
     paths:
       - 'sikchung/**'
       - '.github/workflows/deploy.yml'
