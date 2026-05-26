@@ -1,0 +1,261 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Sikchung cleaning schedule - AWS backend scaffold (stage 1)
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref SikchungDataTable
+
+Resources:
+
+  # ── Cognito User Pool ──────────────────────────────────────────────────────
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: SikchungUserPool
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      LambdaConfig:
+        PostConfirmation: !GetAtt PostConfirmationFunction.Arn
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      UserPoolId: !Ref UserPool
+
+  LeaderGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: leader
+      UserPoolId: !Ref UserPool
+
+  MemberGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: member
+      UserPoolId: !Ref UserPool
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: SikchungWebClient
+      GenerateSecret: false
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - https://placeholder.example.com/callback
+      LogoutURLs:
+        - https://placeholder.example.com/
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Sub "sikchung-auth-${AWS::AccountId}"
+
+  # ── DynamoDB ───────────────────────────────────────────────────────────────
+  SikchungDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SikchungData
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  # ── HTTP API Gateway ───────────────────────────────────────────────────────
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+              audience:
+                - !Ref UserPoolClient
+            IdentitySource: "$request.header.Authorization"
+        DefaultAuthorizer: CognitoAuthorizer
+
+  # ── Lambda Functions ───────────────────────────────────────────────────────
+  MeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/
+      Handler: handlers/me.handler
+      Events:
+        GetMe:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /me
+        PutMe:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: PUT
+            Path: /me
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SikchungDataTable
+
+  MembersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/
+      Handler: handlers/members.handler
+      Events:
+        GetMembers:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /members
+        PutMember:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: PUT
+            Path: /member/{sub}
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SikchungDataTable
+
+  ScheduleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/
+      Handler: handlers/schedule.handler
+      Events:
+        PostSchedule:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /schedule
+        GetLatestSchedule:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /schedule/latest
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SikchungDataTable
+
+  AdminFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/
+      Handler: handlers/admin.handler
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPool
+      Events:
+        PostUser:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /user
+        DeleteUser:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: DELETE
+            Path: /user/{sub}
+        PutUserRole:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: PUT
+            Path: /user/{sub}/role
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SikchungDataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminCreateUser
+                - cognito-idp:AdminDeleteUser
+                - cognito-idp:AdminAddUserToGroup
+                - cognito-idp:AdminRemoveUserFromGroup
+                - cognito-idp:AdminListGroupsForUser
+              Resource: !GetAtt UserPool.Arn
+
+  # NOTE: PostConfirmationFunction은 UserPool의 LambdaConfig에서 참조되므로
+  # Globals의 TABLE_NAME(!Ref SikchungDataTable)만 사용 — USER_POOL_ID를
+  # Globals에 넣으면 순환 의존성 발생. AdminFunction에만 명시적으로 추가함.
+  PostConfirmationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/
+      Handler: handlers/postConfirmation.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SikchungDataTable
+
+  PostConfirmationInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt PostConfirmationFunction.Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
+
+# ── Outputs ─────────────────────────────────────────────────────────────────
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: SikchungUserPoolId
+
+  ClientId:
+    Description: Cognito App Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: SikchungClientId
+
+  CognitoDomain:
+    Description: Cognito Hosted UI domain
+    Value: !Sub "sikchung-auth-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com"
+    Export:
+      Name: SikchungCognitoDomain
+
+  ApiEndpoint:
+    Description: HTTP API endpoint URL
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: SikchungApiEndpoint
+
+  TableName:
+    Description: DynamoDB table name
+    Value: !Ref SikchungDataTable
+    Export:
+      Name: SikchungTableName
