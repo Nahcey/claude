@@ -1156,14 +1156,12 @@ $('backBtn').addEventListener('click', () => {
 });
 
 // ============================================================
-// 헤더 우상단 "updated: YYYY-MM-DD" — 한국 표준시(KST) 기준
+// 헤더 우상단 "updated: YYYY-MM-DD" — 파일이 변경될 때마다 아래 상수를
+// 그 시점 한국 표준시(KST) 날짜로 직접 수정해서 유지한다.
 // ============================================================
+const UPDATED_AT = '2026-05-26'; // KST, HTML 파일 변경 시 함께 갱신
 (function showUpdated() {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric', month: '2-digit', day: '2-digit'
-  });
-  $('updatedLabel').textContent = `updated: ${fmt.format(new Date())}`;
+  $('updatedLabel').textContent = `updated: ${UPDATED_AT}`;
 })();
 
 // ============================================================
