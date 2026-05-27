@@ -34,6 +34,13 @@ Resources:
           RequireLowercase: false
           RequireNumbers: false
           RequireSymbols: false
+      Schema:
+        - Name: displayName
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+          StringAttributeConstraints:
+            MaxLength: "50"
       LambdaConfig:
         PostConfirmation: !GetAtt PostConfirmationFunction.Arn
 
@@ -174,8 +181,13 @@ Resources:
             Method: PUT
             Path: /member/{sub}
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query    # listMembers
+                - dynamodb:GetItem  # getMember (존재 확인 후 수정)
+                - dynamodb:PutItem  # putMember
+              Resource: !GetAtt SikchungDataTable.Arn
 
   ScheduleFunction:
     Type: AWS::Serverless::Function
@@ -196,8 +208,12 @@ Resources:
             Method: GET
             Path: /schedule/latest
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query    # getLatestSchedule (ScanIndexForward: false)
+                - dynamodb:PutItem  # putSchedule
+              Resource: !GetAtt SikchungDataTable.Arn
 
   AdminFunction:
     Type: AWS::Serverless::Function
@@ -227,16 +243,19 @@ Resources:
             Method: PUT
             Path: /user/{sub}/role
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
         - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem    # email 조회 (DELETE/role-change)
+                - dynamodb:PutItem    # MEMBER 생성 (POST /user)
+                - dynamodb:DeleteItem # MEMBER 삭제 (DELETE /user)
+              Resource: !GetAtt SikchungDataTable.Arn
             - Effect: Allow
               Action:
                 - cognito-idp:AdminCreateUser
                 - cognito-idp:AdminDeleteUser
                 - cognito-idp:AdminAddUserToGroup
                 - cognito-idp:AdminRemoveUserFromGroup
-                - cognito-idp:AdminListGroupsForUser
               Resource: !GetAtt UserPool.Arn
 
   PostConfirmationFunction:
@@ -245,8 +264,11 @@ Resources:
       CodeUri: ../backend/
       Handler: handlers/postConfirmation.handler
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem  # MEMBER 기본값 레코드 생성
+              Resource: !GetAtt SikchungDataTable.Arn
 
   PostConfirmationInvokePermission:
     Type: AWS::Lambda::Permission

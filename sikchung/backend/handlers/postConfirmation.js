@@ -1,25 +1,31 @@
 'use strict';
 // Cognito PostConfirmation 트리거
-// 이메일 인증 완료 시 DynamoDB에 기본 MEMBER 레코드를 생성한다.
-//
-// event.request.userAttributes.sub   → cognito sub (= DynamoDB SK)
-// event.request.userAttributes.email → 이메일
-// 반환값: event 그대로 (Cognito 트리거 규약)
+// 이메일 인증 완료 시 DynamoDB에 MEMBER 기본값 레코드를 생성한다.
+// POST /user로 생성된 사용자도 비밀번호 변경 완료 시 이 트리거가 실행된다.
+// 에러가 나도 가입 흐름을 막지 않도록 try-catch로 감싼다.
 
-// TODO: const { putItem } = require('../lib/db');
+const { putMember } = require('../lib/db');
 
 exports.handler = async (event) => {
-  // TODO: const { sub, email } = event.request.userAttributes;
-  // TODO: await putItem({
-  //         PK: 'MEMBER',
-  //         SK: sub,
-  //         email,
-  //         name: '',
-  //         restricted: [],
-  //         double: false,
-  //         rookie: false,
-  //         priority: 0,
-  //         updatedAt: new Date().toISOString(),
-  //       });
-  return event; // Cognito에 event를 그대로 돌려줘야 함
+  try {
+    const attrs = event.request.userAttributes;
+    const sub   = attrs.sub;
+    const email = attrs.email;
+    // custom:displayName이 있으면 사용, 없으면 email을 이름으로 사용
+    const name  = attrs['custom:displayName'] || email;
+
+    await putMember(sub, {
+      email,
+      name,
+      restricted: Array(12).fill(false),
+      double:     false,
+      rookie:     false,
+      priority:   0,
+    });
+  } catch (err) {
+    console.error('[postConfirmation] DynamoDB write failed:', err);
+    // 에러를 throw하지 않아야 가입 흐름이 차단되지 않는다
+  }
+
+  return event; // Cognito 트리거 규약: event 그대로 반환
 };
