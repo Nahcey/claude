@@ -1,6 +1,7 @@
 node_modules/
 .aws-sam/
 frontend/config.js
+outputs.json
 .deploy-outputs.json
 *.env
 .env.*

@@ -1,174 +1,222 @@
-# 식당 청소 일정 생성기 — AWS 백엔드
+# 식당 청소 일정 생성기 — AWS 백엔드 + CloudFront 호스팅
 
-## 개요
-
-기존 `frontend/index3.html` 단일 파일 앱을 AWS 백엔드와 결합한다.  
-빌드와 배포는 **GitHub Actions**가 처리하며, 개발자(Termux)는 `git push`만 한다.
+분대 청소 일정 자동 생성 앱. 모바일 우선, 역할 기반 권한 (admin / leader / member).
+Termux 에서 `git push` 만으로 전체 배포가 끝나도록 구성됨.
 
 ```
 Termux (git push)
-  → GitHub Actions (sam build + sam deploy)
-    → AWS: Cognito + API GW + Lambda + DynamoDB
-    → (5단계) S3 + CloudFront
+  → GitHub Actions (sam build/deploy → s3 sync → cloudfront invalidate)
+    → AWS: Cognito + API GW + Lambda + DynamoDB + S3 + CloudFront
+    → 접속: https://<cloudfront_domain>
 ```
 
-## GitHub Secrets 설정
+---
 
-저장소 Settings → Secrets and variables → Actions 에서 등록:
+## 0. 환경 준비 (Termux)
 
-| Secret 이름             | 설명                                |
-|------------------------|-------------------------------------|
-| `AWS_ACCESS_KEY_ID`    | IAM 사용자 액세스 키                 |
-| `AWS_SECRET_ACCESS_KEY`| IAM 사용자 시크릿 키                 |
-| `AWS_REGION`           | `ap-northeast-2` (고정 — 선택 사항) |
-
-### IAM 권한 (최소 권한 설정 시 필요한 서비스)
-- CloudFormation (FullAccess)
-- S3 (SAM artifact 버킷용)
-- Lambda, API Gateway, DynamoDB, Cognito, IAM
-
-> 간편하게는 `AdministratorAccess`를 사용하되, 프로덕션 전환 시 최소 권한으로 좁힐 것.
-
-## Termux 최소 환경 준비
+이미 설치되어 있다면 스킵. 새 기기에서는:
 
 ```bash
 pkg update && pkg upgrade -y
-pkg install -y nodejs git jq curl
-
-# AWS CLI (운영 스크립트용 — 배포에는 불필요)
+pkg install -y nodejs git curl jq python
 pip install awscli
 
-# 자격증명 설정 (Termux에서 사용자 관리 명령만 실행 시 필요)
+# IAM 사용자 자격증명 설정 (한 번)
 aws configure
+#   AWS Access Key ID:     ...
+#   AWS Secret Access Key: ...
+#   Default region name:   ap-northeast-2
+#   Default output format: json
 ```
 
-## 첫 배포 순서
+> Termux 는 `git push` + 운영 스크립트만 실행함. `sam` / `cdk` / `docker` 는 필요 없음.
+
+### GitHub Secrets (한 번 설정)
+
+저장소 Settings → Secrets and variables → Actions:
+
+| Secret 이름             | 설명                  |
+|-------------------------|----------------------|
+| `AWS_ACCESS_KEY_ID`     | IAM 사용자 액세스 키 |
+| `AWS_SECRET_ACCESS_KEY` | IAM 사용자 시크릿 키 |
+
+IAM 사용자에는 CloudFormation·S3·Lambda·API Gateway·DynamoDB·Cognito·IAM·CloudFront 권한이 필요함 (개발 단계에서는 `AdministratorAccess` 도 가능).
+
+---
+
+## 1. 최초 배포
 
 ```bash
-# 1. 저장소 클론 (Termux)
-git clone https://github.com/Nahcey/claude.git
-cd claude
-
-# 2. main 브랜치에 push
-git checkout main  # 또는 PR 머지
-git push origin main
-
-# 3. GitHub → Actions 탭 → "Deploy Sikchung Backend" 워크플로우 확인
+git push origin main   # 또는 PR 머지
 ```
 
-Actions가 완료되면 AWS CloudFormation 스택 `sikchung`이 생성된다.
+GitHub → Actions 탭의 **"Deploy Sikchung Backend"** 워크플로우 진행 확인.
 
-## 프로젝트 구조
+**예상 소요 시간**
+- SAM build/deploy: 3~5 분
+- CloudFront 최초 전파: **10~20 분**
+- 전체: **15~25 분**
+
+워크플로우 종료 후 Job Summary 에 다음이 출력됨:
+- **URL**: `https://<cloudfront_domain>`
+- 스택 출력값 표 (UserPoolId / ClientId / ApiEndpoint 등)
+
+---
+
+## 2. 관리자 계정 생성 (배포 후 한 번)
+
+```bash
+bash sikchung/scripts/create-admin.sh your@email.com TempPass123! "이름"
+```
+
+- 비밀번호는 8자+ · 대소문자+숫자+특수문자 포함
+- 생성 즉시 Cognito 사용자 + admin 그룹 + DynamoDB MEMBER 레코드 모두 만들어짐
+- 첫 로그인 시 Cognito 가 새 비밀번호 변경 화면을 자동 표시
+
+---
+
+## 3. 일상 운영 명령
+
+```bash
+# 분대장 추가
+bash sikchung/scripts/create-user.sh leader@email.com leader "홍길동" TempPass123!
+
+# 분대원 추가
+bash sikchung/scripts/create-user.sh member@email.com member "김철수" TempPass123!
+
+# 사용자 삭제 (확인 프롬프트 있음)
+bash sikchung/scripts/delete-user.sh user@example.com
+
+# 그룹별 사용자 목록
+bash sikchung/scripts/list-users.sh
+
+# Lambda 로그 (인자 없으면 함수 목록 출력)
+bash sikchung/scripts/logs.sh
+bash sikchung/scripts/logs.sh MeFunction
+
+# 배포 헬스체크
+bash sikchung/scripts/check-deployment.sh
+
+# 코드 변경 시
+git push        # → Actions 가 자동 재배포 + CloudFront 무효화
+```
+
+---
+
+## 4. 권한 구조
+
+| 역할   | 인원 | 가능한 작업                              |
+|--------|------|------------------------------------------|
+| admin  | 1명  | 전체 권한 · 사용자 생성/삭제/역할 변경    |
+| leader | 2명  | 전체 인원 조회/수정 · 주간 일정 생성/저장 |
+| member | 다수 | 본인 정보 조회/수정 · 최신 일정 조회      |
+
+JWT 의 `cognito:groups` 클레임으로 판정. 백엔드(`lib/auth.js`) 와 프론트엔드(`permissions.js`) 양쪽에서 검증.
+
+---
+
+## 5. DynamoDB 스키마 (`SikchungData`, PAY_PER_REQUEST)
+
+| PK       | SK            | 속성                                                        |
+|----------|---------------|-------------------------------------------------------------|
+| MEMBER   | `{cognito_sub}` | email, name, restricted[12], double, rookie, priority, updatedAt |
+| SCHEDULE | `{yyyy-ww}`     | scheduleData(JSON), generatedBy, generatedByEmail, generatedAt   |
+
+---
+
+## 6. 프로젝트 구조
 
 ```
 sikchung/
 ├── frontend/
-│   ├── index3.html       메인 앱 (백엔드 연동 완료)
-│   ├── auth.js           Cognito Hosted UI OAuth2 로그인 흐름
-│   ├── api.js            백엔드 API 클라이언트
-│   ├── permissions.js    JWT 디코딩 + 역할 확인
-│   ├── config.example.js 런타임 설정 예시
-│   └── config.js         실제 설정값 (gitignore — 수동 생성)
+│   ├── index3.html          메인 앱 (백엔드 연동 완료)
+│   ├── auth.js              Cognito Hosted UI OAuth2 로그인 흐름
+│   ├── api.js               백엔드 API 클라이언트
+│   ├── permissions.js       JWT 디코딩 + 역할 확인
+│   ├── config.example.js    런타임 설정 예시
+│   └── config.js            실제 값 (gitignore · Actions 가 자동 생성)
 ├── backend/
-│   ├── handlers/
-│   │   ├── me.js             GET/PUT /me
-│   │   ├── members.js        GET /members, PUT /member/{sub}
-│   │   ├── schedule.js       POST /schedule, GET /schedule/latest
-│   │   ├── admin.js          POST/DELETE/PUT /user (admin 전용)
-│   │   └── postConfirmation.js  Cognito 이메일 인증 완료 트리거
-│   ├── lib/
-│   │   ├── auth.js           역할 기반 권한 확인
-│   │   ├── db.js             DynamoDB DocumentClient 래퍼
-│   │   └── response.js       HTTP 응답 헬퍼
+│   ├── handlers/  me / members / schedule / admin / postConfirmation
+│   ├── lib/       auth · db · response
 │   └── package.json
 ├── infra/
-│   ├── template.yaml     SAM 템플릿 (IaC)
-│   └── samconfig.toml    SAM 배포 기본값
-├── scripts/              Termux 운영 스크립트 (5단계에서 작성)
+│   ├── template.yaml        SAM 템플릿 (Cognito · API GW · Lambda · DDB · S3 · CloudFront)
+│   └── samconfig.toml
+├── scripts/                 Termux 운영 스크립트
+│   ├── _lib.sh              공통 라이브러리 (source 전용)
+│   ├── create-admin.sh
+│   ├── create-user.sh
+│   ├── delete-user.sh
+│   ├── list-users.sh
+│   ├── logs.sh
+│   └── check-deployment.sh
 └── README.md
-.github/workflows/
-└── deploy.yml            GitHub Actions CI/CD
+.github/workflows/deploy.yml  CI/CD
 ```
 
-## 권한 구조
+---
 
-| 역할   | 인원 | 가능한 작업                            |
-|--------|------|----------------------------------------|
-| admin  | 1명  | 전체 권한, 사용자 생성/삭제/역할 변경   |
-| leader | 2명  | 전체 인원 조회/수정, 주간 일정 생성     |
-| member | 다수 | 본인 정보 조회/수정, 최신 일정 조회     |
+## 7. 트러블슈팅 (Termux 특화)
 
-## DynamoDB 스키마 (SikchungData)
+| 증상 | 진단/해결 |
+|------|----------|
+| GitHub Actions 실패 | Actions 탭에서 실패 단계 로그 확인. SAM build 실패 시 `template.yaml` 문법 점검. |
+| CloudFront 가 새 코드를 안 보여줌 | 캐시 무효화 대기 5~10 분. 브라우저 시크릿 모드로 재접속. |
+| CORS 에러 | URL 끝에 `?debug=1` 붙여서 Eruda 콘솔 → Network 탭 확인. `OPTIONS` 응답 상태 점검. |
+| Cognito `redirect_mismatch` | Actions 의 **Update Cognito callback URLs** 단계 재실행 (workflow_dispatch). |
+| Lambda 에러 | `bash scripts/logs.sh <함수명>` 으로 실시간 로그 확인. |
+| 임시 비밀번호 거부 | Cognito 정책 8자+ · 대소문자+숫자+특수문자 미충족. |
+| 401 만 반복 | 토큰 만료 (auth.js 가 자동 재발급 시도하지만 refresh 도 만료된 경우 재로그인 필요). |
+| `aws` 명령 not found | `pip install awscli` 후 `aws configure`. |
 
-| PK       | SK            | 속성                                                        |
-|----------|---------------|-------------------------------------------------------------|
-| MEMBER   | {cognito_sub} | name, restricted[], double, rookie, priority, updatedAt     |
-| SCHEDULE | {yyyy-ww}     | scheduleData(JSON), generatedBy(sub), generatedAt           |
+---
 
-## 단계별 개발 계획
+## 8. 비용 추정 (분대 ~15 명, 월간)
 
-| 단계 | 내용                                        | 상태  |
-|------|---------------------------------------------|-------|
-| 1    | 구조·골격·CI/CD 파이프라인                  | ✅ 완료 |
-| 2    | Lambda CRUD 로직 구현                       | ✅ 완료 |
-| 3    | 스케줄/관리자/PostConfirmation 엔드포인트   | ✅ 완료 |
-| 4    | Cognito 로그인 + 프론트엔드 연동            | ✅ 완료 |
-| **5**| S3+CloudFront 호스팅 + 자동 URL 주입        | **다음** |
+| 서비스 | 사용량 | 비용 |
+|--------|-------|------|
+| Cognito MAU | <50 | 무료 (월 10,000명까지) |
+| Lambda 호출 | ~수천 | 무료 (월 1M까지) |
+| API Gateway HTTP API | ~수천 | 무료 (월 1M까지) |
+| DynamoDB on-demand | 매우 적음 | < $0.10 |
+| S3 | 정적 자원 ~1MB | < $0.01 |
+| CloudFront | < 1GB/월 | 무료 등급 |
+| **합계** | | **$0 ~ $1** |
 
-## 4단계 자가검증
+---
 
-### 전제
-- GitHub Actions `Deploy Sikchung Backend` 워크플로우가 성공적으로 완료됐어야 함
-- 워크플로우의 **"Print stack outputs"** 단계에서 ApiEndpoint, CognitoDomain, ClientId 값을 확인
+## 9. 모바일 디버깅
 
-### config.js 수동 생성 (로컬 테스트용)
-
-```bash
-# sikchung/frontend/ 디렉토리에 config.js 생성
-# (이 파일은 .gitignore에 있으므로 커밋되지 않음)
-cat > sikchung/frontend/config.js <<'EOF'
-window.APP_CONFIG = {
-  apiEndpoint:   'https://실제API엔드포인트.execute-api.ap-northeast-2.amazonaws.com/prod',
-  cognitoDomain: 'https://sikchung-auth-ACCOUNTID.auth.ap-northeast-2.amazoncognito.com',
-  clientId:      '실제클라이언트ID',
-  redirectUri:   'http://localhost:8080/index3.html',
-};
-EOF
-```
-
-### 로컬 서버 실행 및 테스트
-
-```bash
-# 1. 프론트엔드 디렉토리에서 HTTP 서버 실행 (Python 3)
-cd sikchung/frontend
-python3 -m http.server 8080
-
-# 2. 브라우저에서 http://localhost:8080/index3.html 열기
-# 3. "로그인" 버튼 클릭 → Cognito Hosted UI로 이동
-# 4. 이메일/비밀번호로 로그인 (POST /user 로 생성된 계정)
-# 5. 로그인 완료 후 http://localhost:8080/index3.html?code=... 로 리다이렉트됨
-#    → auth.js가 code를 토큰으로 교환하고 localStorage에 저장
-```
-
-### 역할별 동작 확인
-
-| 역할   | 기대 동작 |
-|--------|-----------|
-| leader | 전체 인원 카드 표시, 일정 생성 버튼 활성, "확정 저장" 버튼 생성 후 표시 |
-| admin  | leader와 동일 + 모달에서 멤버 삭제 버튼 표시 |
-| member | "내 설정" 카드(본인만), 최신 일정 표, 생성 버튼 없음 |
-
-> **참고**: 5단계(CloudFront)가 완료되면 `redirectUri`를 HTTPS URL로 교체하고  
-> GitHub Actions가 자동으로 config.js를 생성·업로드함.
-
-### 디버그 콘솔 (모바일)
+브라우저 URL 끝에 `?debug=1` 추가 → Eruda 콘솔이 우측 하단에 표시됨.
 
 ```
-http://localhost:8080/index3.html?eruda=1
+https://<cloudfront_domain>/?debug=1
 ```
 
-## 운영 명령어 (5단계에서 채움)
+---
 
-```bash
-# 사용자 초대, 역할 변경 등 scripts/ 디렉토리 참고
-```
+## 10. 동작 확인 체크리스트
+
+배포 후 다음을 순서대로 확인:
+
+- [ ] GitHub Actions 녹색 ✓ 완료
+- [ ] Actions Job Summary 에 CloudFront URL 표시
+- [ ] `curl -I https://<cloudfront_domain>/` → `HTTP/2 200`
+- [ ] `bash scripts/check-deployment.sh` 가 모든 항목 ✓
+- [ ] 모바일 Chrome 으로 접속 시 자동으로 Cognito 로그인 화면 표시
+- [ ] admin 임시비번 로그인 → 새 비번 설정 화면 자동 표시
+- [ ] 새 비번 설정 후 leader UI (전체 인원 카드 + "일정 생성" 버튼) 노출
+- [ ] 분대원 계정으로 로그인 → "내 설정" 카드 + 최신 일정 표만 표시
+- [ ] member 가 다른 인원 카드를 볼 수 없음
+- [ ] leader 가 "일정 생성" → "확정 저장" → 모든 계정에서 동일 일정 조회
+- [ ] `?debug=1` 으로 Eruda 콘솔 표시
+
+---
+
+## 11. 알려진 제약 / 후속 작업
+
+- **커스텀 도메인 미지원**: CloudFront 기본 `*.cloudfront.net` 도메인만 사용. 추후 ACM + Route53 추가 시 별도 작업 필요.
+- **API CORS 가 `*`**: 운영 환경에서는 CloudFront 도메인으로 제한 권장 (`template.yaml` 의 `CorsConfiguration.AllowOrigins`).
+- **localhost 콜백 URL**: Stage 4 의 localhost 콜백은 deploy 시 CloudFront URL 로 **덮어쓰기됨**. 로컬 개발 재개 시 `aws cognito-idp update-user-pool-client` 로 `http://localhost:8080/index3.html` 을 추가 필요.
+- **Cognito 사용자 수 증가**: MAU 10,000 초과 시 유료. 분대 단위에선 무관.
+- **PostConfirmation 트리거**: 스크립트로 생성된 사용자는 트리거가 거의 발화하지 않음 (이미 `email_verified=true`). 스크립트가 DynamoDB MEMBER 레코드를 직접 생성하여 안전.

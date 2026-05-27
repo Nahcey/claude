@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Sikchung cleaning schedule - AWS backend (stage 1 scaffold)
+Description: Sikchung cleaning schedule - AWS backend + frontend hosting (S3 + CloudFront)
 
 Globals:
   Function:
@@ -280,6 +280,136 @@ Resources:
       Principal: cognito-idp.amazonaws.com
       SourceArn: !GetAtt UserPool.Arn
 
+  # ── S3 (frontend hosting) ──────────────────────────────────────────────────
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "sikchung-frontend-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced   # ACL 비활성 (권장)
+
+  # OAC: CloudFront → S3 SigV4 서명. CloudFront만이 버킷에 접근 가능.
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "sikchung-oac-${AWS::AccountId}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ── CloudFront Cache Policies ──────────────────────────────────────────────
+
+  HtmlCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "sikchung-html-${AWS::AccountId}"
+        Comment: HTML — 60s TTL (배포 후 빠른 반영)
+        DefaultTTL: 60
+        MinTTL: 0
+        MaxTTL: 60
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  AssetsCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "sikchung-assets-${AWS::AccountId}"
+        Comment: JS/CSS — 1 day TTL
+        DefaultTTL: 86400
+        MinTTL: 0
+        MaxTTL: 86400
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  # ── CloudFront Distribution ────────────────────────────────────────────────
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Sikchung frontend (index3.html)
+        DefaultRootObject: index3.html
+        PriceClass: PriceClass_200   # 한국 포함 최소 비용 등급
+        HttpVersion: http2
+        IPV6Enabled: true
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt FrontendOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""   # OAC 사용 시 빈 문자열
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods:  [GET, HEAD]
+          Compress: true
+          CachePolicyId: !Ref HtmlCachePolicy
+        CacheBehaviors:
+          - PathPattern: "*.js"
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods:  [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref AssetsCachePolicy
+          - PathPattern: "*.css"
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods:  [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref AssetsCachePolicy
+        # SPA 라우팅: 404/403도 index3.html로 (200 응답)
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index3.html
+            ErrorCachingMinTTL: 60
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index3.html
+            ErrorCachingMinTTL: 60
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true   # *.cloudfront.net 기본 인증서
+
+  # CloudFront OAC만 GetObject 허용
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
 # ── Outputs ──────────────────────────────────────────────────────────────────
 
 Outputs:
@@ -312,3 +442,21 @@ Outputs:
     Value: !Ref SikchungDataTable
     Export:
       Name: SikchungTableName
+
+  CloudFrontDomain:
+    Description: CloudFront distribution domain (앱 접속 URL)
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: SikchungCloudFrontDomain
+
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID (캐시 무효화에 사용)
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: SikchungCloudFrontDistributionId
+
+  FrontendBucketName:
+    Description: 프론트엔드 정적 자원이 저장될 S3 버킷명
+    Value: !Ref FrontendBucket
+    Export:
+      Name: SikchungFrontendBucketName
