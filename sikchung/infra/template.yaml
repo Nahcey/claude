@@ -77,8 +77,10 @@ Resources:
       AllowedOAuthFlowsUserPoolClient: true
       CallbackURLs:
         - https://placeholder.example.com/callback   # 5단계에서 CloudFront URL로 교체
+        - http://localhost:8080/index3.html           # 4단계 로컬 테스트용
       LogoutURLs:
         - https://placeholder.example.com/
+        - http://localhost:8080/index3.html           # 4단계 로컬 테스트용
       SupportedIdentityProviders:
         - COGNITO
 

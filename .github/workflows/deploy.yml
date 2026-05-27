@@ -65,7 +65,20 @@ jobs:
         working-directory: sikchung/infra
         run: sam deploy
 
-      # ── 8~10. 5단계에서 활성화 ─────────────────────────────────────────────
+      # ── 8. 스택 출력값 → Job Summary (config.js 수동 생성 참조용) ──────────
+      - name: Print stack outputs
+        run: |
+          echo "## 스택 출력값 (config.js 생성에 사용)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          aws cloudformation describe-stacks \
+            --stack-name sikchung \
+            --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
+            --output text | \
+            awk '{ print "| " $1 " | `" $2 "` |" }' >> $GITHUB_STEP_SUMMARY
+
+      # ── 9~11. 5단계에서 활성화 ─────────────────────────────────────────────
       # - name: Extract CloudFormation outputs
       #   id: cfn
       #   run: |

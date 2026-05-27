@@ -2117,6 +2117,10 @@ async function boot() {
     // 일반 멤버: 자기 카드 + 최신 일정
     $('generateSection').style.display = 'none';
     $('latestScheduleSection').style.display = '';
+    // 카드 헤딩을 멤버용으로 변경
+    const cardH2 = document.querySelector('.card h2');
+    if (cardH2) { cardH2.innerHTML = '내 설정'; }
+    $('personCount').style.display = 'none';
     try {
       const me = await API.getMe();
       people = [_mapMeToPersonEntry(me)];
