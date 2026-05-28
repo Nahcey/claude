@@ -12,6 +12,7 @@ const {
   AdminDeleteUserCommand,
   AdminAddUserToGroupCommand,
   AdminRemoveUserFromGroupCommand,
+  AdminListGroupsForUserCommand,
 } = require('@aws-sdk/client-cognito-identity-provider');
 
 const { authorize }                                   = require('../lib/auth');
@@ -29,12 +30,14 @@ const cognito = new CognitoIdentityProviderClient({
 
 exports.handler = async (event) => {
   try {
+    const method = event.requestContext.http.method;
+    if (method === 'OPTIONS') return ok({});
+
     const auth = authorize(event, 'admin');
     if (!auth.ok) {
       return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
     }
 
-    const method = event.requestContext.http.method;
     const { sub } = event.pathParameters ?? {};
 
     // ── POST /user ──────────────────────────────────────────────────────────
@@ -133,15 +136,18 @@ exports.handler = async (event) => {
       if (!member) return notFound('User not found');
       const cognitoUsername = member.username || member.email;
 
-      // 기존 leader/member 그룹 제거 (없어도 무시)
-      for (const group of CHANGEABLE_ROLES) {
-        try {
-          await cognito.send(new AdminRemoveUserFromGroupCommand({
-            UserPoolId: USER_POOL_ID,
-            Username: cognitoUsername,
-            GroupName: group,
-          }));
-        } catch (_) { /* 해당 그룹에 없으면 무시 */ }
+      // 현재 속한 그룹 목록을 조회한 뒤 leader/member 그룹만 제거
+      const groupsRes = await cognito.send(new AdminListGroupsForUserCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: cognitoUsername,
+      }));
+      const currentGroups = (groupsRes.Groups || []).map(g => g.GroupName);
+      for (const group of currentGroups.filter(g => CHANGEABLE_ROLES.includes(g))) {
+        await cognito.send(new AdminRemoveUserFromGroupCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: cognitoUsername,
+          GroupName: group,
+        }));
       }
 
       await cognito.send(new AdminAddUserToGroupCommand({

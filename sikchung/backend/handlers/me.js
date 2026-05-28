@@ -10,27 +10,31 @@ const { ok, badRequest, unauthorized, forbidden, serverError } = require('../lib
 
 exports.handler = async (event) => {
   try {
+    const method = event.requestContext.http.method;
+    if (method === 'OPTIONS') return ok({});
+
     const auth = authorize(event, 'member');
     if (!auth.ok) {
       return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
     }
     const { userSub, role } = auth;
 
-    const method = event.requestContext.http.method;
-
     // ── GET /me ─────────────────────────────────────────────────────────────
     if (method === 'GET') {
+      const claims      = event.requestContext.authorizer.jwt.claims;
+      const displayName = claims['custom:displayName'] || claims['cognito:username'] || claims.sub;
+
       const item = await getMember(userSub);
       if (!item) {
-        // PostConfirmation 트리거 이전에 호출된 경우 기본값 반환
-        return ok({ name: '', restricted: [], double: false, rookie: false, priority: 0 });
+        return ok({ name: '', restricted: [], double: false, rookie: false, priority: 0, role, displayName });
       }
       const { PK, SK, ...data } = item;
-      return ok(data);
+      return ok({ ...data, role, displayName });
     }
 
     // ── PUT /me ─────────────────────────────────────────────────────────────
     if (method === 'PUT') {
+
       let body;
       try {
         body = JSON.parse(event.body || '{}');

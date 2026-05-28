@@ -10,12 +10,13 @@ const { ok, badRequest, notFound, unauthorized, forbidden, serverError } = requi
 
 exports.handler = async (event) => {
   try {
+    const method = event.requestContext.http.method;
+    if (method === 'OPTIONS') return ok({});
+
     const auth = authorize(event, 'leader');
     if (!auth.ok) {
       return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
     }
-
-    const method = event.requestContext.http.method;
 
     // ── GET /members ─────────────────────────────────────────────────────────
     if (method === 'GET') {
