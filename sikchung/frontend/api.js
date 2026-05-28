@@ -6,8 +6,8 @@
     opts   = opts   === undefined ? {}   : opts;
     _retry = _retry === undefined ? true : _retry;
 
-    const { accessToken } = Auth.getTokens();
-    if (!accessToken) {
+    const { idToken } = Auth.getTokens();
+    if (!idToken) {
       const err = new Error('Not authenticated');
       err.status = 401;
       throw err;
@@ -17,7 +17,7 @@
       ...opts,
       headers: {
         'Content-Type':  'application/json',
-        'Authorization': 'Bearer ' + accessToken,
+        'Authorization': 'Bearer ' + idToken,
         ...(opts.headers || {}),
       },
     });
