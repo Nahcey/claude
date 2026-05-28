@@ -1,21 +1,21 @@
 'use strict';
-// Cognito PostConfirmation 트리거
-// 이메일 인증 완료 시 DynamoDB에 MEMBER 기본값 레코드를 생성한다.
-// POST /user로 생성된 사용자도 비밀번호 변경 완료 시 이 트리거가 실행된다.
-// 에러가 나도 가입 흐름을 막지 않도록 try-catch로 감싼다.
+// Cognito PostConfirmation 트리거 (username 기반 풀)
+// 가입 확정 시 DynamoDB에 MEMBER 기본값 레코드를 생성한다.
+// 대부분의 계정은 스크립트(create_cognito_user)가 레코드를 미리 만들지만,
+// 트리거가 발화하는 경우를 대비한 안전장치. 에러가 나도 흐름을 막지 않는다.
 
 const { putMember } = require('../lib/db');
 
 exports.handler = async (event) => {
   try {
-    const attrs = event.request.userAttributes;
-    const sub   = attrs.sub;
-    const email = attrs.email;
-    // custom:displayName이 있으면 사용, 없으면 email을 이름으로 사용
-    const name  = attrs['custom:displayName'] || email;
+    const attrs    = event.request.userAttributes || {};
+    const sub      = attrs.sub;
+    const username = event.userName || attrs['cognito:username'] || sub;
+    // custom:displayName이 있으면 사용, 없으면 username을 이름으로 사용
+    const name     = attrs['custom:displayName'] || username;
 
     await putMember(sub, {
-      email,
+      username,
       name,
       restricted: Array(12).fill(false),
       double:     false,

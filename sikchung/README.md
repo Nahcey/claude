@@ -63,31 +63,74 @@ GitHub → Actions 탭의 **"Deploy Sikchung Backend"** 워크플로우 진행 �
 
 ---
 
-## 2. 관리자 계정 생성 (배포 후 한 번)
+## 2. 로그인 방식 — 아이디(username) 기반
 
-```bash
-bash sikchung/scripts/create-admin.sh your@email.com TempPass123! "이름"
-```
+이메일이 아닌 **아이디(username)** 로 로그인한다. 분대원의 아이디-이름은
+생성 시점에 `custom:displayName` 으로 고정 입력된다 (로그인 후 이름 선택 불필요).
 
-- 비밀번호는 8자+ · 대소문자+숫자+특수문자 포함
-- 생성 즉시 Cognito 사용자 + admin 그룹 + DynamoDB MEMBER 레코드 모두 만들어짐
-- 첫 로그인 시 Cognito 가 새 비밀번호 변경 화면을 자동 표시
+### 아이디-이름 매핑 (고정)
+
+| 아이디         | 이름   | 권한    |  | 아이디         | 이름   | 권한    |
+|----------------|--------|---------|--|----------------|--------|---------|
+| wjdqhwndeo00   | 박예찬 | admin   |  | wjdqhwndeo07   | 정한결 | member  |
+| wjdqhwndeo01   | 이동민 | member  |  | wjdqhwndeo08   | 김최원 | member  |
+| wjdqhwndeo02   | 김기환 | member  |  | wjdqhwndeo09   | 오승호 | member  |
+| wjdqhwndeo03   | 정우진 | member  |  | wjdqhwndeo11   | 권기범 | member  |
+| wjdqhwndeo04   | 윤민형 | member  |  | wjdqhwndeo12   | 최정협 | member  |
+| wjdqhwndeo05   | 한우현 | member  |  | wjdqhwndeo13   | 전유찬 | member  |
+| wjdqhwndeo06   | 권정훈 | member  |  | _(wjdqhwndeo10 없음)_ |  |  |
+
+> **wjdqhwndeo10 은 존재하지 않음.** 박예찬은 admin 으로 `wjdqhwndeo00` 에 별도 생성되며,
+> 박예찬도 청소 당번 인원 카드를 가진다 (분대장 2명은 아래 set-role 로 지정).
+
+> ⚠️ **User Pool 재생성 주의** — 이번 변경(이메일→아이디 로그인)은 Cognito
+> User Pool 의 `UsernameAttributes` 변경이라 CloudFormation 이 **User Pool 을
+> 교체(replace)** 한다. 결과적으로:
+> - UserPoolId / ClientId 가 새로 발급됨 (config.js·콜백 URL 은 워크플로우가 자동 갱신)
+> - **기존 모든 계정(admin 포함)이 삭제됨** → 배포 후 admin + 분대원 **재생성 필요**
 
 ---
 
-## 3. 일상 운영 명령
+## 3. 배포 후 운영 순서 (최초 1회)
 
 ```bash
-# 분대장 추가
-bash sikchung/scripts/create-user.sh leader@email.com leader "홍길동" TempPass123!
+# 1) Actions 통과 + 스택 UPDATE_COMPLETE 확인 후
 
-# 분대원 추가
-bash sikchung/scripts/create-user.sh member@email.com member "김철수" TempPass123!
+# 2) admin(박예찬) 생성
+bash sikchung/scripts/create-admin.sh wjdqhwndeo00 TempPass123! "박예찬"
+
+# 3) 분대원 12명 일괄 생성 (전원 member)
+bash sikchung/scripts/batch-create-members.sh TempPass123!
+
+# 4) 분대장 2명 지정 (예: 김기환·한우현)
+bash sikchung/scripts/set-role.sh wjdqhwndeo02 leader
+bash sikchung/scripts/set-role.sh wjdqhwndeo05 leader
+
+# 5) 분대원에게 "아이디 wjdqhwndeoNN / 임시비번 TempPass123!" 배포
+# 6) 각자 첫 로그인 시 새 비밀번호 설정 (Cognito 기본 동작)
+```
+
+---
+
+## 4. 일상 운영 명령
+
+```bash
+# 분대원 단건 추가 (배치에서 누락된 경우 등)
+bash sikchung/scripts/create-user.sh wjdqhwndeo01 member "이동민" TempPass123!
+
+# 권한 부여 (분대장 지정)
+bash sikchung/scripts/set-role.sh wjdqhwndeo02 leader
+
+# 권한 회수 (분대원으로 되돌리기)
+bash sikchung/scripts/set-role.sh wjdqhwndeo02 member
+
+# 비밀번호 리셋 (분실 시 admin 이 강제 설정 — 즉시 영구 적용)
+bash sikchung/scripts/reset-password.sh wjdqhwndeo05 NewPass123!
 
 # 사용자 삭제 (확인 프롬프트 있음)
-bash sikchung/scripts/delete-user.sh user@example.com
+bash sikchung/scripts/delete-user.sh wjdqhwndeo05
 
-# 그룹별 사용자 목록
+# 사용자 목록 (그룹별 + 무소속, 아이디/이름/sub 표시)
 bash sikchung/scripts/list-users.sh
 
 # Lambda 로그 (인자 없으면 함수 목록 출력)
@@ -100,6 +143,8 @@ bash sikchung/scripts/check-deployment.sh
 # 코드 변경 시
 git push        # → Actions 가 자동 재배포 + CloudFront 무효화
 ```
+
+> 권한 변경(set-role) 후 해당 사용자는 **다음 로그인부터** 새 권한 토큰을 받는다.
 
 ---
 
@@ -119,8 +164,11 @@ JWT 의 `cognito:groups` 클레임으로 판정. 백엔드(`lib/auth.js`) 와 �
 
 | PK       | SK            | 속성                                                        |
 |----------|---------------|-------------------------------------------------------------|
-| MEMBER   | `{cognito_sub}` | email, name, restricted[12], double, rookie, priority, updatedAt |
+| MEMBER   | `{cognito_sub}` | username, name(한글), restricted[12], double, rookie, priority, updatedAt |
 | SCHEDULE | `{yyyy-ww}`     | scheduleData(JSON), generatedBy, generatedByEmail, generatedAt   |
+
+> `name` 은 생성 시 박은 한글 이름(`custom:displayName`). `username` 은
+> Cognito 아이디(wjdqhwndeoNN) 로, 삭제·권한변경 시 Cognito 조회에 사용.
 
 ---
 
@@ -143,13 +191,16 @@ sikchung/
 │   ├── template.yaml        SAM 템플릿 (Cognito · API GW · Lambda · DDB · S3 · CloudFront)
 │   └── samconfig.toml
 ├── scripts/                 Termux 운영 스크립트
-│   ├── _lib.sh              공통 라이브러리 (source 전용)
-│   ├── create-admin.sh
-│   ├── create-user.sh
-│   ├── delete-user.sh
-│   ├── list-users.sh
-│   ├── logs.sh
-│   └── check-deployment.sh
+│   ├── _lib.sh                  공통 라이브러리 (source 전용)
+│   ├── create-admin.sh         admin 생성 (username 기반)
+│   ├── batch-create-members.sh 분대원 12명 일괄 생성
+│   ├── create-user.sh          단건 사용자 생성
+│   ├── set-role.sh             권한 부여/회수 (admin/leader/member)
+│   ├── reset-password.sh       비밀번호 강제 재설정
+│   ├── delete-user.sh          사용자 삭제
+│   ├── list-users.sh           그룹별+무소속 목록
+│   ├── logs.sh                 Lambda 로그 tail
+│   └── check-deployment.sh     배포 헬스체크
 └── README.md
 .github/workflows/deploy.yml  CI/CD
 ```
@@ -199,14 +250,18 @@ https://<cloudfront_domain>/?debug=1
 
 배포 후 다음을 순서대로 확인:
 
-- [ ] GitHub Actions 녹색 ✓ 완료
+- [ ] GitHub Actions 녹색 ✓ 완료, 스택 UPDATE_COMPLETE
 - [ ] Actions Job Summary 에 CloudFront URL 표시
 - [ ] `curl -I https://<cloudfront_domain>/` → `HTTP/2 200`
 - [ ] `bash scripts/check-deployment.sh` 가 모든 항목 ✓
-- [ ] 모바일 Chrome 으로 접속 시 자동으로 Cognito 로그인 화면 표시
-- [ ] admin 임시비번 로그인 → 새 비번 설정 화면 자동 표시
-- [ ] 새 비번 설정 후 leader UI (전체 인원 카드 + "일정 생성" 버튼) 노출
-- [ ] 분대원 계정으로 로그인 → "내 설정" 카드 + 최신 일정 표만 표시
+- [ ] User Pool 이 **아이디(username) 로그인**으로 재생성됨 (이메일 입력란 없음)
+- [ ] `create-admin.sh wjdqhwndeo00 ... "박예찬"` + `batch-create-members.sh` 로 13명 생성
+- [ ] `list-users.sh` 가 admin 1 · member 12 · 각자 한글 이름 표시
+- [ ] 모바일 Chrome 접속 시 Cognito 로그인 화면이 **"사용자 이름"** 입력을 받음
+- [ ] 아이디 `wjdqhwndeo00` + 임시비번 로그인 → 새 비번 설정 화면 자동 표시
+- [ ] 새 비번 설정 후 admin/leader UI (전체 인원 카드 + "일정 생성" 버튼) 노출
+- [ ] `set-role.sh wjdqhwndeo02 leader` 후 해당 계정 재로그인 → leader UI 노출
+- [ ] 분대원 계정으로 로그인 → 본인 한글 이름 "내 설정" 카드 + 최신 일정만 표시
 - [ ] member 가 다른 인원 카드를 볼 수 없음
 - [ ] leader 가 "일정 생성" → "확정 저장" → 모든 계정에서 동일 일정 조회
 - [ ] `?debug=1` 으로 Eruda 콘솔 표시
@@ -219,4 +274,6 @@ https://<cloudfront_domain>/?debug=1
 - **API CORS 가 `*`**: 운영 환경에서는 CloudFront 도메인으로 제한 권장 (`template.yaml` 의 `CorsConfiguration.AllowOrigins`).
 - **localhost 콜백 URL**: Stage 4 의 localhost 콜백은 deploy 시 CloudFront URL 로 **덮어쓰기됨**. 로컬 개발 재개 시 `aws cognito-idp update-user-pool-client` 로 `http://localhost:8080/index3.html` 을 추가 필요.
 - **Cognito 사용자 수 증가**: MAU 10,000 초과 시 유료. 분대 단위에선 무관.
-- **PostConfirmation 트리거**: 스크립트로 생성된 사용자는 트리거가 거의 발화하지 않음 (이미 `email_verified=true`). 스크립트가 DynamoDB MEMBER 레코드를 직접 생성하여 안전.
+- **PostConfirmation 트리거**: 스크립트로 생성된 사용자는 트리거가 거의 발화하지 않음. 스크립트(`_lib.sh` 의 `create_cognito_user`)가 DynamoDB MEMBER 레코드를 직접 생성하여 안전.
+- **이메일 미사용**: 아이디 기반 로그인이라 이메일 검증·비밀번호 자동복구(forgot password) 미지원. 비번 분실 시 admin 이 `reset-password.sh` 로 처리.
+- **권한 변경 반영 시점**: `set-role.sh` 후 기존 발급된 토큰에는 옛 권한이 남아있음 → 해당 사용자가 재로그인(또는 토큰 만료)해야 새 권한 적용.

@@ -23,10 +23,13 @@
     if (!c) return null;
     const raw = c['cognito:groups'];
     const groups = Array.isArray(raw) ? raw : (raw ? raw.split(',').map(g => g.trim()) : []);
+    // username 기반 풀: email 이 없을 수 있으므로 username/sub 를 식별자 폴백으로 사용
+    const username = c['cognito:username'] || c.username || c.sub;
     return {
       sub:         c.sub,
+      username,
       email:       c.email || '',
-      displayName: c['custom:displayName'] || c.email || c.sub,
+      displayName: c['custom:displayName'] || username,
       groups,
       isAdmin:  groups.includes('admin'),
       isLeader: groups.includes('admin') || groups.includes('leader'),

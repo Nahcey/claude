@@ -3,7 +3,8 @@
 // DELETE /user/{sub}      — 사용자 삭제 (admin)
 // PUT    /user/{sub}/role — 역할 변경 leader↔member (admin, admin 역할 변경 불가)
 //
-// 삭제/역할변경: DynamoDB MEMBER 레코드에 저장된 email로 Cognito username 조회
+// username 기반 풀: DELETE/역할변경 시 MEMBER 레코드의 username 으로 Cognito 조회
+// (구 레코드 호환을 위해 username 없으면 email 로 폴백)
 
 const {
   CognitoIdentityProviderClient,
@@ -45,8 +46,9 @@ exports.handler = async (event) => {
         return badRequest('Invalid JSON body');
       }
 
-      const { email, role, displayName, temporaryPassword } = body;
-      if (!email)             return badRequest('email is required');
+      const { username, email, role, displayName, temporaryPassword } = body;
+      const cognitoUsername = username || email;   // username 우선, 없으면 email
+      if (!cognitoUsername)   return badRequest('username (or email) is required');
       if (!role)              return badRequest('role is required');
       if (!CHANGEABLE_ROLES.includes(role)) return badRequest('role must be leader or member');
       if (!temporaryPassword) return badRequest('temporaryPassword is required');
@@ -55,10 +57,9 @@ exports.handler = async (event) => {
       try {
         const res = await cognito.send(new AdminCreateUserCommand({
           UserPoolId: USER_POOL_ID,
-          Username: email,          // UsernameAttributes=[email] 이므로 email=username
+          Username: cognitoUsername,
           UserAttributes: [
-            { Name: 'email',          Value: email },
-            { Name: 'email_verified', Value: 'true' },
+            ...(email ? [{ Name: 'email', Value: email }, { Name: 'email_verified', Value: 'true' }] : []),
             ...(displayName ? [{ Name: 'custom:displayName', Value: displayName }] : []),
           ],
           TemporaryPassword: temporaryPassword,
@@ -71,21 +72,22 @@ exports.handler = async (event) => {
 
       await cognito.send(new AdminAddUserToGroupCommand({
         UserPoolId: USER_POOL_ID,
-        Username: email,
+        Username: cognitoUsername,
         GroupName: role,
       }));
 
-      // PostConfirmation 전이라도 DELETE/role 변경에 email이 필요하므로 즉시 생성
+      // PostConfirmation 전이라도 DELETE/role 변경에 username 이 필요하므로 즉시 생성
       await putMember(createdSub, {
-        email,
-        name: displayName || email,
+        username: cognitoUsername,
+        email: email || '',
+        name: displayName || cognitoUsername,
         restricted: Array(12).fill(false),
         double: false,
         rookie: false,
         priority: 0,
       });
 
-      return created({ sub: createdSub, email, role });
+      return created({ sub: createdSub, username: cognitoUsername, role });
     }
 
     // ── DELETE /user/{sub} ──────────────────────────────────────────────────
@@ -94,12 +96,13 @@ exports.handler = async (event) => {
 
       const member = await getMember(sub);
       if (!member) return notFound('User not found');
+      const cognitoUsername = member.username || member.email;
 
       // Cognito 삭제 먼저 시도. 실패하면 DynamoDB는 건드리지 않는다.
       try {
         await cognito.send(new AdminDeleteUserCommand({
           UserPoolId: USER_POOL_ID,
-          Username: member.email,
+          Username: cognitoUsername,
         }));
       } catch (e) {
         if (e.name !== 'UserNotFoundException') throw e;
@@ -128,13 +131,14 @@ exports.handler = async (event) => {
 
       const member = await getMember(sub);
       if (!member) return notFound('User not found');
+      const cognitoUsername = member.username || member.email;
 
       // 기존 leader/member 그룹 제거 (없어도 무시)
       for (const group of CHANGEABLE_ROLES) {
         try {
           await cognito.send(new AdminRemoveUserFromGroupCommand({
             UserPoolId: USER_POOL_ID,
-            Username: member.email,
+            Username: cognitoUsername,
             GroupName: group,
           }));
         } catch (_) { /* 해당 그룹에 없으면 무시 */ }
@@ -142,7 +146,7 @@ exports.handler = async (event) => {
 
       await cognito.send(new AdminAddUserToGroupCommand({
         UserPoolId: USER_POOL_ID,
-        Username: member.email,
+        Username: cognitoUsername,
         GroupName: newRole,
       }));
 

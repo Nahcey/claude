@@ -19,14 +19,14 @@ Resources:
 
   # ── Cognito ────────────────────────────────────────────────────────────────
 
+  # NOTE: username 기반 로그인 (아이디 = wjdqhwndeoNN).
+  # UsernameAttributes / AutoVerifiedAttributes 제거 → 이메일 불필요.
+  # UsernameAttributes 변경은 교체(replace) 트리거이므로 UserPool 재생성됨
+  # → UserPoolId/ClientId 변경, 기존 사용자 전원 삭제 (의도된 동작).
   UserPool:
     Type: AWS::Cognito::UserPool
     Properties:
       UserPoolName: SikchungUserPool
-      UsernameAttributes:
-        - email
-      AutoVerifiedAttributes:
-        - email
       Policies:
         PasswordPolicy:
           MinimumLength: 8

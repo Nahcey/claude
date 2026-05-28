@@ -54,34 +54,44 @@ validate_password() {
   return 0
 }
 
-# Cognito 사용자의 sub 조회
+# Cognito 사용자의 sub 조회 (인자: username)
 get_user_sub() {
-  local email="$1"
+  local username="$1"
   aws cognito-idp admin-get-user \
     --user-pool-id "$USER_POOL_ID" \
     --region "$AWS_REGION" \
-    --username "$email" \
+    --username "$username" \
     --query "UserAttributes[?Name=='sub'].Value" \
     --output text 2>/dev/null || true
 }
 
-# MEMBER DynamoDB 레코드 생성 (default 값)
+# 사용자 존재 여부 (0=존재, 1=없음)
+user_exists() {
+  local username="$1"
+  aws cognito-idp admin-get-user \
+    --user-pool-id "$USER_POOL_ID" \
+    --region "$AWS_REGION" \
+    --username "$username" \
+    >/dev/null 2>&1
+}
+
+# MEMBER DynamoDB 레코드 생성 (default 값). 인자: sub username name
 put_member_default() {
   local sub="$1"
-  local email="$2"
+  local username="$2"
   local name="$3"
   local ts
   ts="$(date -u +%FT%TZ)"
   local item
   item=$(jq -n \
-    --arg sub   "$sub"   \
-    --arg email "$email" \
-    --arg name  "$name"  \
-    --arg ts    "$ts"    \
+    --arg sub      "$sub"      \
+    --arg username "$username" \
+    --arg name     "$name"     \
+    --arg ts       "$ts"       \
     '{
        PK:         {S: "MEMBER"},
        SK:         {S: $sub},
-       email:      {S: $email},
+       username:   {S: $username},
        name:       {S: $name},
        restricted: {L: [{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false}]},
        double:     {BOOL: false},
@@ -93,4 +103,33 @@ put_member_default() {
     --table-name "$TABLE_NAME" \
     --region "$AWS_REGION" \
     --item "$item" >/dev/null
+}
+
+# Cognito 사용자 1명 생성 + 그룹 추가 + MEMBER 레코드. 인자: username name role tempPw
+# 반환: 0=생성, 2=이미 존재(스킵)
+create_cognito_user() {
+  local username="$1" name="$2" role="$3" temp_pw="$4"
+  if user_exists "$username"; then
+    return 2
+  fi
+  local resp sub
+  resp=$(aws cognito-idp admin-create-user \
+    --user-pool-id "$USER_POOL_ID" \
+    --region "$AWS_REGION" \
+    --username "$username" \
+    --user-attributes Name=custom:displayName,Value="$name" \
+    --temporary-password "$temp_pw" \
+    --message-action SUPPRESS \
+    --output json)
+  sub=$(echo "$resp" | jq -r '.User.Attributes[] | select(.Name=="sub") | .Value')
+  [ -n "$sub" ] && [ "$sub" != "null" ] || { echo "sub 조회 실패: $username" >&2; return 1; }
+
+  aws cognito-idp admin-add-user-to-group \
+    --user-pool-id "$USER_POOL_ID" \
+    --region "$AWS_REGION" \
+    --username "$username" \
+    --group-name "$role" >/dev/null
+
+  put_member_default "$sub" "$username" "$name"
+  return 0
 }
