@@ -21,13 +21,22 @@ function authorize(event, requiredRole) {
   const userSub = claims.sub;
   const email   = claims.email || '';
 
-  // API Gateway는 JWT 배열 클레임을 쉼표 구분 문자열로 변환한다.
-  // 예: ["admin","member"] → "admin,member"
-  const groupsRaw = claims['cognito:groups'] || '';
-  const groups    = groupsRaw ? groupsRaw.split(',').map(g => g.trim()) : [];
+  // API Gateway HTTP API는 배열 클레임을 쉼표 구분 문자열로 변환하기도 하고
+  // 누락시키기도 하므로 배열·문자열·undefined 세 경우를 모두 처리한다.
+  const groupsRaw = claims['cognito:groups'];
+  let groups = [];
+  if (Array.isArray(groupsRaw)) {
+    groups = groupsRaw;
+  } else if (typeof groupsRaw === 'string' && groupsRaw) {
+    groups = groupsRaw.split(',').map(g => g.trim());
+  }
 
   // 계층에서 가장 높은 역할을 선택한다.
   const role = [...HIERARCHY].reverse().find(r => groups.includes(r)) || 'member';
+
+  console.log('[auth] claims keys:', Object.keys(claims || {}));
+  console.log('[auth] cognito:groups raw:', JSON.stringify(groupsRaw));
+  console.log('[auth] resolved role:', role);
 
   if (HIERARCHY.indexOf(role) < HIERARCHY.indexOf(requiredRole)) {
     return { ok: false, status: 403, message: 'Forbidden' };
