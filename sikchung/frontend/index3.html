@@ -2126,7 +2126,20 @@ async function boot() {
       const me = await API.getMe();
       people = [_mapMeToPersonEntry(me)];
       nextId = 2;
-    } catch (e) { console.error('[boot] getMe:', e); }
+    } catch (e) {
+      console.error('[boot] getMe:', e);
+      // getMe 실패 시 JWT 클레임으로 기본 카드 구성 (API 장애에도 카드 표시)
+      people = [{
+        id: 1,
+        sub: _currentUser.sub,
+        name: _currentUser.displayName || _currentUser.username || '',
+        restricted: new Array(SLOTS_COUNT).fill(false),
+        double: false,
+        rookie: false,
+        priority: 0,
+      }];
+      nextId = 2;
+    }
     try {
       const schedule = await API.getLatestSchedule();
       if (schedule && schedule.weekId) {
