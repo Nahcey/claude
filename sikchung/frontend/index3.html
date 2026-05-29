@@ -697,8 +697,7 @@ function renderPeople() {
     peopleGrid.appendChild(card);
   }
 
-  const pc = $('personCount');
-  if (pc) pc.textContent = `(현재 인원: ${people.length}명 / 총 배정 슬롯: ${TOTAL_SLOTS})`;
+  ($('personCount') || {}).textContent = `(현재 인원: ${people.length}명 / 총 배정 슬롯: ${TOTAL_SLOTS})`;
 }
 
 // ============================================================
@@ -1021,13 +1020,9 @@ $('resetBtn').addEventListener('click', () => {
           people = _mapMembersTopeople(members);
           nextId = people.length + 1;
         } else if (_currentUser) {
-          try {
-            const me = await API.getMe();
-            people = [_mapMeToPersonEntry(me)];
-            nextId = 2;
-          } catch(e) {
-            people = [];
-          }
+          const me = await API.getMe();
+          people = [_mapMeToPersonEntry(me)];
+          nextId = 2;
         }
         renderPeople();
         updateStatus();
@@ -2126,26 +2121,12 @@ async function boot() {
     // 카드 헤딩을 멤버용으로 변경
     const cardH2 = document.querySelector('.card h2');
     if (cardH2) { cardH2.innerHTML = '내 설정'; }
-    const pc2 = $('personCount');
-    if (pc2) pc2.style.display = 'none';
+    $('personCount') && ($('personCount').style.display = 'none');
     try {
       const me = await API.getMe();
       people = [_mapMeToPersonEntry(me)];
       nextId = 2;
-    } catch (e) {
-      console.error('[boot] getMe:', e);
-      // getMe 실패 시 JWT 클레임으로 기본 카드 구성 (API 장애에도 카드 표시)
-      people = [{
-        id: 1,
-        sub: _currentUser.sub,
-        name: _currentUser.displayName || _currentUser.username || '',
-        restricted: new Array(SLOTS_COUNT).fill(false),
-        double: false,
-        rookie: false,
-        priority: 0,
-      }];
-      nextId = 2;
-    }
+    } catch (e) { console.error('[boot] getMe:', e); }
     try {
       const schedule = await API.getLatestSchedule();
       if (schedule && schedule.weekId) {
