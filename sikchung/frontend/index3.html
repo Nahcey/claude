@@ -2077,20 +2077,12 @@ async function boot() {
     catch (e) { console.error('[boot] callback error:', e); }
   }
 
-  // 비로그인 상태: localStorage 폴백 + 로그인 버튼 표시
+  // 비로그인 상태: Cognito 로그인 화면으로 즉시 리다이렉트
+  // (?code= 콜백은 위 handleCallback()에서 이미 처리 완료되어 URL에서 제거됨)
   if (!window.Auth || !Auth.isLoggedIn()) {
     $('loginBtn').style.display = '';
     $('loginBtn').addEventListener('click', () => Auth && Auth.login());
-    const saved = loadPeople();
-    if (saved && saved.length > 0) {
-      people = saved;
-      nextId = Math.max(0, ...people.map(p => p.id)) + 1;
-    } else {
-      initPeople();
-      savePeople();
-    }
-    renderPeople();
-    updateStatus();
+    if (window.Auth) Auth.login();
     return;
   }
 
