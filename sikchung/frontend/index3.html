@@ -7,10 +7,10 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>식당 청소 일정 생성기</title>
-<script src="config.js"></script>
-<script src="auth.js"></script>
-<script src="api.js"></script>
-<script src="permissions.js"></script>
+<script src="config.js" defer></script>
+<script src="auth.js" defer></script>
+<script src="api.js" defer></script>
+<script src="permissions.js" defer></script>
 <style>
 :root {
   --bg: #F5F7FA;
@@ -2156,7 +2156,7 @@ async function boot() {
   }
 }
 
-boot();
+document.addEventListener('DOMContentLoaded', boot);
 </script>
 
 <!-- Eruda 디버그 콘솔 — URL에 ?debug=1 또는 ?eruda=1 이 있을 때만 로드 -->
