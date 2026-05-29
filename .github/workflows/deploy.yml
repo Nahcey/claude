@@ -2,7 +2,10 @@ name: Deploy Sikchung Backend
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'claude/sikchung-aws-backend-scaffold-GoqEk'
+      - 'claude/hopeful-noether-tJoCC'
     paths:
       - 'sikchung/**'
       - '.github/workflows/deploy.yml'
