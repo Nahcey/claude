@@ -1,31 +1,167 @@
 'use strict';
-// POST   /user            — 사용자 초대 생성 (admin)
+// POST   /user            — 사용자 생성 (admin)
 // DELETE /user/{sub}      — 사용자 삭제 (admin)
-// PUT    /user/{sub}/role — 역할 변경: admin→leader→member (admin)
+// PUT    /user/{sub}/role — 역할 변경 leader↔member (admin, admin 역할 변경 불가)
 //
-// env: USER_POOL_ID, TABLE_NAME
+// username 기반 풀: DELETE/역할변경 시 MEMBER 레코드의 username 으로 Cognito 조회
+// (구 레코드 호환을 위해 username 없으면 email 로 폴백)
 
-// TODO: const { authorize } = require('../lib/auth');
-// TODO: const { deleteItem } = require('../lib/db');
-// TODO: const { ok, badRequest, notFound } = require('../lib/response');
-// TODO: const { CognitoIdentityProviderClient,
-//               AdminCreateUserCommand,
-//               AdminDeleteUserCommand,
-//               AdminAddUserToGroupCommand,
-//               AdminRemoveUserFromGroupCommand,
-//               AdminListGroupsForUserCommand } = require('@aws-sdk/client-cognito-identity-provider');
+const {
+  CognitoIdentityProviderClient,
+  AdminCreateUserCommand,
+  AdminDeleteUserCommand,
+  AdminAddUserToGroupCommand,
+  AdminRemoveUserFromGroupCommand,
+  AdminListGroupsForUserCommand,
+} = require('@aws-sdk/client-cognito-identity-provider');
 
-const USER_POOL_ID = process.env.USER_POOL_ID;
-// TODO: const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION });
+const { authorize }                                   = require('../lib/auth');
+const { getMember, putMember, deleteMember }          = require('../lib/db');
+const {
+  ok, created, badRequest, unauthorized, forbidden, notFound, conflict, serverError,
+} = require('../lib/response');
+
+const USER_POOL_ID    = process.env.USER_POOL_ID;
+const CHANGEABLE_ROLES = ['leader', 'member'];
+
+const cognito = new CognitoIdentityProviderClient({
+  region: process.env.AWS_REGION || 'ap-northeast-2',
+});
 
 exports.handler = async (event) => {
-  // TODO: authorize(event, 'admin');
-  // TODO: const method = event.requestContext.http.method;
-  // TODO: const { sub } = event.pathParameters || {};
-  //
-  // TODO: POST   /user            → AdminCreateUser, body: { email, role }
-  // TODO: DELETE /user/{sub}      → AdminDeleteUser + deleteItem('MEMBER', sub)
-  // TODO: PUT    /user/{sub}/role → AdminListGroupsForUser → AdminRemoveUserFromGroup
-  //                                 → AdminAddUserToGroup(body.role)
-  throw new Error('Not implemented');
+  try {
+    const method = event.requestContext.http.method;
+    if (method === 'OPTIONS') return ok({});
+
+    const auth = authorize(event, 'admin');
+    if (!auth.ok) {
+      return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
+    }
+
+    const { sub } = event.pathParameters ?? {};
+
+    // ── POST /user ──────────────────────────────────────────────────────────
+    if (method === 'POST') {
+      let body;
+      try {
+        body = JSON.parse(event.body || '{}');
+      } catch {
+        return badRequest('Invalid JSON body');
+      }
+
+      const { username, email, role, displayName, temporaryPassword } = body;
+      const cognitoUsername = username || email;   // username 우선, 없으면 email
+      if (!cognitoUsername)   return badRequest('username (or email) is required');
+      if (!role)              return badRequest('role is required');
+      if (!CHANGEABLE_ROLES.includes(role)) return badRequest('role must be leader or member');
+      if (!temporaryPassword) return badRequest('temporaryPassword is required');
+
+      let createdSub;
+      try {
+        const res = await cognito.send(new AdminCreateUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: cognitoUsername,
+          UserAttributes: [
+            ...(email ? [{ Name: 'email', Value: email }, { Name: 'email_verified', Value: 'true' }] : []),
+            ...(displayName ? [{ Name: 'custom:displayName', Value: displayName }] : []),
+          ],
+          TemporaryPassword: temporaryPassword,
+        }));
+        createdSub = res.User.Attributes.find(a => a.Name === 'sub')?.Value;
+      } catch (e) {
+        if (e.name === 'UsernameExistsException') return conflict('User already exists');
+        throw e;
+      }
+
+      await cognito.send(new AdminAddUserToGroupCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: cognitoUsername,
+        GroupName: role,
+      }));
+
+      // PostConfirmation 전이라도 DELETE/role 변경에 username 이 필요하므로 즉시 생성
+      await putMember(createdSub, {
+        username: cognitoUsername,
+        email: email || '',
+        name: displayName || cognitoUsername,
+        restricted: Array(12).fill(false),
+        double: false,
+        rookie: false,
+        priority: 0,
+      });
+
+      return created({ sub: createdSub, username: cognitoUsername, role });
+    }
+
+    // ── DELETE /user/{sub} ──────────────────────────────────────────────────
+    if (method === 'DELETE') {
+      if (!sub) return badRequest('sub path parameter is required');
+
+      const member = await getMember(sub);
+      if (!member) return notFound('User not found');
+      const cognitoUsername = member.username || member.email;
+
+      // Cognito 삭제 먼저 시도. 실패하면 DynamoDB는 건드리지 않는다.
+      try {
+        await cognito.send(new AdminDeleteUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: cognitoUsername,
+        }));
+      } catch (e) {
+        if (e.name !== 'UserNotFoundException') throw e;
+        // Cognito에 이미 없는 경우 → DynamoDB 정리만 진행
+      }
+
+      await deleteMember(sub);
+      return ok({ deleted: true, sub });
+    }
+
+    // ── PUT /user/{sub}/role ────────────────────────────────────────────────
+    if (method === 'PUT') {
+      if (!sub) return badRequest('sub path parameter is required');
+
+      let body;
+      try {
+        body = JSON.parse(event.body || '{}');
+      } catch {
+        return badRequest('Invalid JSON body');
+      }
+
+      const { role: newRole } = body;
+      if (!newRole)                          return badRequest('role is required');
+      if (newRole === 'admin')               return badRequest('admin role cannot be assigned via this API');
+      if (!CHANGEABLE_ROLES.includes(newRole)) return badRequest('role must be leader or member');
+
+      const member = await getMember(sub);
+      if (!member) return notFound('User not found');
+      const cognitoUsername = member.username || member.email;
+
+      // 현재 속한 그룹 목록을 조회한 뒤 leader/member 그룹만 제거
+      const groupsRes = await cognito.send(new AdminListGroupsForUserCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: cognitoUsername,
+      }));
+      const currentGroups = (groupsRes.Groups || []).map(g => g.GroupName);
+      for (const group of currentGroups.filter(g => CHANGEABLE_ROLES.includes(g))) {
+        await cognito.send(new AdminRemoveUserFromGroupCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: cognitoUsername,
+          GroupName: group,
+        }));
+      }
+
+      await cognito.send(new AdminAddUserToGroupCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: cognitoUsername,
+        GroupName: newRole,
+      }));
+
+      return ok({ sub, role: newRole });
+    }
+
+    return badRequest('Method not allowed');
+  } catch (err) {
+    console.error('[admin] unhandled error:', err);
+    return serverError('Unexpected error');
+  }
 };

@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Sikchung cleaning schedule - AWS backend (stage 1 scaffold)
+Description: Sikchung cleaning schedule - AWS backend + frontend hosting (S3 + CloudFront)
 
 Globals:
   Function:
@@ -19,14 +19,14 @@ Resources:
 
   # ── Cognito ────────────────────────────────────────────────────────────────
 
+  # NOTE: username 기반 로그인 (아이디 = wjdqhwndeoNN).
+  # UsernameAttributes / AutoVerifiedAttributes 제거 → 이메일 불필요.
+  # UsernameAttributes 변경은 교체(replace) 트리거이므로 UserPool 재생성됨
+  # → UserPoolId/ClientId 변경, 기존 사용자 전원 삭제 (의도된 동작).
   UserPool:
     Type: AWS::Cognito::UserPool
     Properties:
       UserPoolName: SikchungUserPool
-      UsernameAttributes:
-        - email
-      AutoVerifiedAttributes:
-        - email
       Policies:
         PasswordPolicy:
           MinimumLength: 8
@@ -34,6 +34,13 @@ Resources:
           RequireLowercase: false
           RequireNumbers: false
           RequireSymbols: false
+      Schema:
+        - Name: displayName
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+          StringAttributeConstraints:
+            MaxLength: "50"
       LambdaConfig:
         PostConfirmation: !GetAtt PostConfirmationFunction.Arn
 
@@ -70,8 +77,10 @@ Resources:
       AllowedOAuthFlowsUserPoolClient: true
       CallbackURLs:
         - https://placeholder.example.com/callback   # 5단계에서 CloudFront URL로 교체
+        - http://localhost:8080/index3.html           # 4단계 로컬 테스트용
       LogoutURLs:
         - https://placeholder.example.com/
+        - http://localhost:8080/index3.html           # 4단계 로컬 테스트용
       SupportedIdentityProviders:
         - COGNITO
 
@@ -174,8 +183,13 @@ Resources:
             Method: PUT
             Path: /member/{sub}
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query    # listMembers
+                - dynamodb:GetItem  # getMember (존재 확인 후 수정)
+                - dynamodb:PutItem  # putMember
+              Resource: !GetAtt SikchungDataTable.Arn
 
   ScheduleFunction:
     Type: AWS::Serverless::Function
@@ -196,8 +210,12 @@ Resources:
             Method: GET
             Path: /schedule/latest
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query    # getLatestSchedule (ScanIndexForward: false)
+                - dynamodb:PutItem  # putSchedule
+              Resource: !GetAtt SikchungDataTable.Arn
 
   AdminFunction:
     Type: AWS::Serverless::Function
@@ -227,9 +245,13 @@ Resources:
             Method: PUT
             Path: /user/{sub}/role
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
         - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem    # email 조회 (DELETE/role-change)
+                - dynamodb:PutItem    # MEMBER 생성 (POST /user)
+                - dynamodb:DeleteItem # MEMBER 삭제 (DELETE /user)
+              Resource: !GetAtt SikchungDataTable.Arn
             - Effect: Allow
               Action:
                 - cognito-idp:AdminCreateUser
@@ -237,6 +259,7 @@ Resources:
                 - cognito-idp:AdminAddUserToGroup
                 - cognito-idp:AdminRemoveUserFromGroup
                 - cognito-idp:AdminListGroupsForUser
+                - cognito-idp:ListUsers
               Resource: !GetAtt UserPool.Arn
 
   PostConfirmationFunction:
@@ -245,8 +268,12 @@ Resources:
       CodeUri: ../backend/
       Handler: handlers/postConfirmation.handler
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SikchungDataTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem  # 기존 레코드 확인 (중복 생성 방지)
+                - dynamodb:PutItem  # MEMBER 기본값 레코드 생성
+              Resource: !GetAtt SikchungDataTable.Arn
 
   PostConfirmationInvokePermission:
     Type: AWS::Lambda::Permission
@@ -255,6 +282,136 @@ Resources:
       FunctionName: !GetAtt PostConfirmationFunction.Arn
       Principal: cognito-idp.amazonaws.com
       SourceArn: !GetAtt UserPool.Arn
+
+  # ── S3 (frontend hosting) ──────────────────────────────────────────────────
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "sikchung-frontend-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced   # ACL 비활성 (권장)
+
+  # OAC: CloudFront → S3 SigV4 서명. CloudFront만이 버킷에 접근 가능.
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "sikchung-oac-${AWS::AccountId}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ── CloudFront Cache Policies ──────────────────────────────────────────────
+
+  HtmlCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "sikchung-html-${AWS::AccountId}"
+        Comment: HTML — 60s TTL (배포 후 빠른 반영)
+        DefaultTTL: 60
+        MinTTL: 0
+        MaxTTL: 60
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  AssetsCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "sikchung-assets-${AWS::AccountId}"
+        Comment: JS/CSS — 1 day TTL
+        DefaultTTL: 86400
+        MinTTL: 0
+        MaxTTL: 86400
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  # ── CloudFront Distribution ────────────────────────────────────────────────
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Sikchung frontend (index3.html)
+        DefaultRootObject: index3.html
+        PriceClass: PriceClass_200   # 한국 포함 최소 비용 등급
+        HttpVersion: http2
+        IPV6Enabled: true
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt FrontendOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""   # OAC 사용 시 빈 문자열
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods:  [GET, HEAD]
+          Compress: true
+          CachePolicyId: !Ref HtmlCachePolicy
+        CacheBehaviors:
+          - PathPattern: "*.js"
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods:  [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref AssetsCachePolicy
+          - PathPattern: "*.css"
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods:  [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref AssetsCachePolicy
+        # SPA 라우팅: 404/403도 index3.html로 (200 응답)
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index3.html
+            ErrorCachingMinTTL: 60
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index3.html
+            ErrorCachingMinTTL: 60
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true   # *.cloudfront.net 기본 인증서
+
+  # CloudFront OAC만 GetObject 허용
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
 
 # ── Outputs ──────────────────────────────────────────────────────────────────
 
@@ -288,3 +445,21 @@ Outputs:
     Value: !Ref SikchungDataTable
     Export:
       Name: SikchungTableName
+
+  CloudFrontDomain:
+    Description: CloudFront distribution domain (앱 접속 URL)
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: SikchungCloudFrontDomain
+
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID (캐시 무효화에 사용)
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: SikchungCloudFrontDistributionId
+
+  FrontendBucketName:
+    Description: 프론트엔드 정적 자원이 저장될 S3 버킷명
+    Value: !Ref FrontendBucket
+    Export:
+      Name: SikchungFrontendBucketName
