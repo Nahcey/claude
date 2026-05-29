@@ -697,7 +697,7 @@ function renderPeople() {
     peopleGrid.appendChild(card);
   }
 
-  $('personCount').textContent = `(현재 인원: ${people.length}명 / 총 배정 슬롯: ${TOTAL_SLOTS})`;
+  $('personCount') && ($('personCount').textContent = `(현재 인원: ${people.length}명 / 총 배정 슬롯: ${TOTAL_SLOTS})`;
 }
 
 // ============================================================
@@ -2121,7 +2121,7 @@ async function boot() {
     // 카드 헤딩을 멤버용으로 변경
     const cardH2 = document.querySelector('.card h2');
     if (cardH2) { cardH2.innerHTML = '내 설정'; }
-    $('personCount').style.display = 'none';
+    $('personCount') && ($('personCount').style.display = 'none';
     try {
       const me = await API.getMe();
       people = [_mapMeToPersonEntry(me)];
