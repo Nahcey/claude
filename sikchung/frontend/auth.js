@@ -23,6 +23,7 @@
   }
 
   function storeTokens(data) {
+    localStorage.removeItem('sikchung_logged_out'); // 로그인 성공 시 로그아웃 플래그 제거
     const expiry = Date.now() + (data.expires_in || 3600) * 1000;
     localStorage.setItem(KEYS.id,     data.id_token);
     localStorage.setItem(KEYS.access, data.access_token);
@@ -54,6 +55,8 @@
 
   function logout() {
     clearTokens();
+    localStorage.setItem('sikchung_logged_out', '1'); // 자동 리다이렉트 억제 플래그
+    console.log('[Auth] logout: flag set, redirecting');
     window.location.href = window.location.origin + window.location.pathname;
   }
 

@@ -2072,20 +2072,28 @@ $('saveScheduleBtn').addEventListener('click', async () => {
 // ============================================================
 async function boot() {
   // OAuth 콜백 처리 (?code= 파라미터)
+  // wasCallback: 콜백 처리 여부 (true면 이미 토큰 교환 시도, 자동 리다이렉트 금지)
+  let wasCallback = false;
   if (window.Auth) {
-    try { await Auth.handleCallback(); }
-    catch (e) { console.error('[boot] callback error:', e); }
+    try { wasCallback = !!(await Auth.handleCallback()); }
+    catch (e) { console.error('[boot] callback error:', e); wasCallback = true; }
   }
 
-  // 비로그인 상태: 방금 로그아웃한 경우는 로그인 버튼만 표시, 그 외엔 자동 리다이렉트
+  // 비로그인 상태 처리
+  // 우선순위: ①콜백 중 → ②로그아웃 플래그 있음 → ③첫 방문(자동 리다이렉트)
   if (!window.Auth || !Auth.isLoggedIn()) {
+    const loggedOutFlag = localStorage.getItem('sikchung_logged_out');
+    console.log('[boot] not logged in | loggedOutFlag:', loggedOutFlag, '| wasCallback:', wasCallback);
     $('loginBtn').style.display = '';
     $('loginBtn').addEventListener('click', () => Auth && Auth.login());
-    const justLoggedOut = sessionStorage.getItem('sikchung_logged_out');
-    if (justLoggedOut) {
-      sessionStorage.removeItem('sikchung_logged_out');
-    } else if (window.Auth) {
+    if (!loggedOutFlag && !wasCallback && window.Auth) {
+      // 처음 방문: 자동으로 Cognito 로그인 화면으로 이동
+      console.log('[boot] first visit → Auth.login()');
       Auth.login();
+    } else {
+      // 로그아웃 후 or 콜백 실패: 로그인 버튼만 표시 (자동 리다이렉트 없음)
+      // 플래그는 storeTokens()(로그인 성공 시)에서 제거됨
+      console.log('[boot] post-logout or failed callback → show login button only');
     }
     return;
   }
@@ -2094,10 +2102,7 @@ async function boot() {
   _apiMode = true;
   _currentUser = Permissions.getCurrentUser();
   showAuthBar(_currentUser);
-  $('logoutBtn').addEventListener('click', () => {
-    sessionStorage.setItem('sikchung_logged_out', '1');
-    Auth.logout();
-  });
+  $('logoutBtn').addEventListener('click', () => Auth.logout()); // logout()이 플래그 설정
   $('loginBtn').addEventListener('click', () => Auth.login());
   $('addRow').style.display = 'none'; // 인원 추가는 관리자 도구에서
 
