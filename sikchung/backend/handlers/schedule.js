@@ -4,8 +4,8 @@
 //
 // SK 형식: yyyy-ww (예: 2025-21)
 
-const { authorize }                             = require('../lib/auth');
-const { putSchedule, getLatestSchedule }        = require('../lib/db');
+const { authorize }                                          = require('../lib/auth');
+const { putSchedule, getLatestSchedule, deleteLatestSchedule } = require('../lib/db');
 const { ok, badRequest, unauthorized, forbidden, serverError } = require('../lib/response');
 
 const WEEK_ID_RE = /^\d{4}-\d{2}$/;
@@ -56,6 +56,17 @@ exports.handler = async (event) => {
 
       const { PK, SK, ...data } = item;
       return ok({ weekId: SK, ...data });
+    }
+
+    // ── DELETE /schedule/latest ──────────────────────────────────────────────
+    if (method === 'DELETE') {
+      const auth = authorize(event, 'leader');
+      if (!auth.ok) {
+        return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
+      }
+      const deletedWeekId = await deleteLatestSchedule();
+      if (!deletedWeekId) return ok({ deleted: false, message: '삭제할 일정이 없습니다.' });
+      return ok({ deleted: true, weekId: deletedWeekId });
     }
 
     return badRequest('Method not allowed');

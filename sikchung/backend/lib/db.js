@@ -87,6 +87,17 @@ async function getLatestSchedule() {
   return Items?.[0] ?? null;
 }
 
+/** 최신 일정 1건 삭제. @returns {string|null} 삭제된 weekId (SK), 없으면 null */
+async function deleteLatestSchedule() {
+  const latest = await getLatestSchedule();
+  if (!latest) return null;
+  await client.send(new DeleteCommand({
+    TableName: TABLE_NAME,
+    Key: { PK: latest.PK, SK: latest.SK },
+  }));
+  return latest.SK;
+}
+
 module.exports = {
   getMember,
   putMember,
@@ -94,4 +105,5 @@ module.exports = {
   deleteMember,
   putSchedule,
   getLatestSchedule,
+  deleteLatestSchedule,
 };

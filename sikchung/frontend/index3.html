@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>식당 청소 일정 생성기</title>
+<title>식당 청소 일정</title>
 <script src="config.js" defer></script>
 <script src="auth.js" defer></script>
 <script src="api.js" defer></script>
@@ -384,7 +384,7 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
 <div class="container">
   <div class="page-header">
     <div>
-      <h1>식당 청소 일정 생성기</h1>
+      <h1>식당 청소 일정</h1>
     </div>
     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
       <div class="updated" id="updatedLabel"></div>
@@ -405,7 +405,7 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
   <div id="infoBanner" class="info-banner" style="display:none;"></div>
 
   <!-- People Section -->
-  <div class="card">
+  <div class="card" id="peopleSection">
     <h2>인원 설정 <span class="count" id="personCount"></span></h2>
     <div class="add-row" id="addRow">
       <input type="text" id="newName" placeholder="이름을 입력하세요" maxlength="20">
@@ -414,7 +414,7 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
 
     <div class="people-grid" id="peopleGrid"></div>
     <p style="font-size:12px; color:var(--muted); margin-top:12px;">
-      인원 칸을 눌러 시간 슬롯 제한 · 주 2회 · 신병을 편집할 수 있습니다. <br>주 2회 OFF: 최대 2슬롯 · ON: 최대 4슬롯.
+      인원 칸을 눌러 편집
     </p>
   </div>
 
@@ -427,7 +427,7 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
       </div>
       <div class="modal-body">
         <div class="field">
-          <label class="field-label">불가능한 시간 슬롯</label>
+          <label class="field-label">불가능한 시간</label>
           <div class="day-grid" id="modalDays"></div>
         </div>
         <div class="field">
@@ -435,7 +435,6 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
           <div class="inline-toggle" id="modalDoubleRow" style="margin-bottom:8px;">
             <div>
               <div class="label-text">주 2회 배정 가능</div>
-              <div class="label-sub">OFF: 최대 2슬롯 · ON: 최대 4슬롯</div>
             </div>
             <div class="switch" id="modalDouble"></div>
           </div>
@@ -449,7 +448,6 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
           <div class="inline-toggle" id="modalExcludedRow" style="margin-top:8px;">
             <div>
               <div class="label-text">일정 제외</div>
-              <div class="label-sub">배정 후보에서만 제외, 계정·설정 유지</div>
             </div>
             <div class="switch" id="modalExcluded"></div>
           </div>
@@ -479,6 +477,7 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
   <div id="latestScheduleSection" style="display:none;" class="card">
     <h2 style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">최신 청소 일정 <span id="latestWeekId" style="font-size:13px; font-weight:400; color:var(--muted);"></span>
       <button class="btn btn-secondary" id="editLatestBtn" style="display:none; font-size:12px; padding:3px 10px; margin-left:auto;">수정</button>
+      <button class="btn btn-secondary" id="deleteLatestBtn" style="display:none; font-size:12px; padding:3px 10px; color:#DC2626; border-color:#DC2626;">삭제</button>
     </h2>
     <div class="table-wrap">
       <table class="schedule">
@@ -743,7 +742,7 @@ function renderPeople() {
     peopleGrid.appendChild(card);
   }
 
-  ($('personCount') || {}).textContent = `(현재 인원: ${people.length}명 / 총 배정 슬롯: ${TOTAL_SLOTS})`;
+  ($('personCount') || {}).textContent = `(현재 인원: ${people.length}명 / 총 배정: ${TOTAL_SLOTS})`;
 }
 
 // ============================================================
@@ -2209,6 +2208,28 @@ $('editLatestBtn').addEventListener('click', async () => {
 });
 
 // ============================================================
+// 최신 일정 삭제 버튼 (분대장/관리자 전용)
+// ============================================================
+$('deleteLatestBtn').addEventListener('click', async () => {
+  if (!_apiMode || !_currentUser || !_currentUser.isLeader) return;
+  if (!confirm('최신 청소 일정을 삭제합니다. 되돌릴 수 없습니다. 계속하시겠습니까?')) return;
+  const btn = $('deleteLatestBtn');
+  btn.disabled = true; btn.textContent = '삭제 중…';
+  try {
+    await API.deleteSchedule();
+    // 최신 일정 영역 초기화
+    $('latestWeekId').textContent = '';
+    $('latestScheduleBody').innerHTML = '';
+    const emptyMsg = $('latestScheduleEmpty');
+    if (emptyMsg) emptyMsg.style.display = '';
+  } catch (e) {
+    alert('삭제 실패: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '삭제';
+  }
+});
+
+// ============================================================
 // 부팅 — 인증 확인 후 역할에 따라 API 또는 localStorage 사용
 // ============================================================
 async function boot() {
@@ -2227,6 +2248,11 @@ async function boot() {
     console.log('[boot] not logged in | loggedOutFlag:', loggedOutFlag, '| wasCallback:', wasCallback);
     $('loginBtn').style.display = '';
     $('loginBtn').addEventListener('click', () => Auth && Auth.login());
+    // 비로그인: 인원 설정·일정 영역 숨김
+    $('peopleSection').style.display = 'none';
+    $('generateSection').style.display = 'none';
+    $('latestScheduleSection').style.display = 'none';
+    $('result').style.display = 'none';
     const justLoggedOut = localStorage.getItem('sikchung_logged_out');
     if (justLoggedOut) {
     } else if (window.Auth) {
@@ -2261,9 +2287,10 @@ async function boot() {
     }
     renderPeople();
     updateStatus();
-    // 최신 일정 표시 + 수정 버튼 노출
+    // 최신 일정 표시 + 수정/삭제 버튼 노출
     $('latestScheduleSection').style.display = '';
     $('editLatestBtn').style.display = '';
+    $('deleteLatestBtn').style.display = '';
     try {
       const schedule = await API.getLatestSchedule();
       if (schedule && schedule.weekId) {
