@@ -41,6 +41,8 @@ Resources:
           Required: false
           StringAttributeConstraints:
             MaxLength: "50"
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
       LambdaConfig:
         PostConfirmation: !GetAtt PostConfirmationFunction.Arn
 

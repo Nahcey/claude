@@ -475,9 +475,11 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
     <button class="btn btn-secondary btn-large" id="resetBtn">새로고침</button>
   </div>
 
-  <!-- 최신 일정 (멤버용 read-only) -->
+  <!-- 최신 일정 (멤버용 read-only, 분대장/관리자는 수정 가능) -->
   <div id="latestScheduleSection" style="display:none;" class="card">
-    <h2>최신 청소 일정 <span id="latestWeekId" style="font-size:13px; font-weight:400; color:var(--muted);"></span></h2>
+    <h2 style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">최신 청소 일정 <span id="latestWeekId" style="font-size:13px; font-weight:400; color:var(--muted);"></span>
+      <button class="btn btn-secondary" id="editLatestBtn" style="display:none; font-size:12px; padding:3px 10px; margin-left:auto;">수정</button>
+    </h2>
     <div class="table-wrap">
       <table class="schedule">
         <thead>
@@ -1379,15 +1381,11 @@ function solveGreedy(active) {
       wkndCounts.get(p.id) === 0
     );
     both.sort((a, b) => {
-      // 1) ON 이고 이미 1 atomic day 끝낸 사람 최우선 (2일차 atomic 으로 cap 다 쓰도록)
-      const aReady = a.double && counts.get(a.id) === 2 ? 0 : 1;
-      const bReady = b.double && counts.get(b.id) === 2 ? 0 : 1;
-      if (aReady !== bReady) return aReady - bReady;
-      // 2) ON 이고 아직 시작 안 했으면 OFF 보다 먼저 (어차피 2일 해야 cap 채움)
-      const aFresh = a.double && counts.get(a.id) === 0 ? 0 : 1;
-      const bFresh = b.double && counts.get(b.id) === 0 ? 0 : 1;
-      if (aFresh !== bFresh) return aFresh - bFresh;
-      // 3) 그 외엔 counts 적은 사람 우선 (공정)
+      // 1) double 인원이 non-double보다 먼저 (2일 배정 필요 → 선점)
+      const aD = a.double ? 0 : 1, bD = b.double ? 0 : 1;
+      if (aD !== bD) return aD - bD;
+      // 2) double끼리(또는 non-double끼리): counts 적은 사람 우선, 동점이면 랜덤
+      //    → 여러 double 인원이 있을 때 균등하게 배정 기회를 가짐
       const dc = counts.get(a.id) - counts.get(b.id);
       if (dc !== 0) return dc;
       return Math.random() - 0.5;
@@ -2091,11 +2089,67 @@ $('saveScheduleBtn').addEventListener('click', async () => {
     await API.postSchedule(weekId, scheduleData);
     statusEl.textContent = `저장됨 (${weekId})`;
     statusEl.style.color = 'var(--green)';
+    // 저장 후 최신 일정 카드 갱신
+    try {
+      const latest = await API.getLatestSchedule();
+      if (latest && latest.weekId) {
+        $('latestWeekId').textContent = '(' + latest.weekId + ')'
+          + (latest.generatedAt ? ' · 생성 ' + fmtKST(latest.generatedAt) : '');
+        renderReadOnlySchedule(latest.scheduleData);
+      }
+    } catch (_) {}
   } catch (e) {
     statusEl.textContent = '저장 실패: ' + e.message;
     statusEl.style.color = 'var(--red)';
   } finally {
     btn.disabled = false; btn.textContent = '확정 저장';
+  }
+});
+
+// ============================================================
+// 최신 일정 수정 버튼 (분대장/관리자 전용)
+// ============================================================
+$('editLatestBtn').addEventListener('click', async () => {
+  if (!_apiMode || !_currentUser || !_currentUser.isLeader) return;
+  const btn = $('editLatestBtn');
+  btn.disabled = true; btn.textContent = '불러오는 중…';
+  try {
+    const latest = await API.getLatestSchedule();
+    if (!latest || !latest.scheduleData || latest.scheduleData.length === 0) {
+      alert('저장된 일정이 없습니다.');
+      return;
+    }
+    // scheduleData → lastResult.schedule 복원 (people 기준 매칭)
+    const byName = new Map(people.map(p => [p.name, p]));
+    const bySub  = new Map(people.filter(p => p.sub).map(p => [p.sub, p]));
+    let orphanId = -1;
+    const schedule = latest.scheduleData.map(slot =>
+      (slot || []).map(entry => {
+        if (!entry) return null;
+        const matched = (entry.sub && bySub.get(entry.sub)) || byName.get(entry.name);
+        if (matched) return matched;
+        // 명단에 없는 인원: 이름만 유지, 수정 시 제거/교체 가능
+        return { id: orphanId--, name: entry.name, restricted: Array(12).fill(false), double: false, priority: 0, excluded: false };
+      })
+    );
+    while (schedule.length < SLOTS_COUNT) schedule.push([null, null]);
+
+    const assignCount = new Map();
+    for (const slot of schedule) for (const p of slot) {
+      if (p && p.id != null) assignCount.set(p.id, (assignCount.get(p.id) || 0) + 1);
+    }
+    lastResult = { schedule, skipped: [], failed: [], fullDays: 0, emptySlots: 0, assignCount, active: people };
+
+    editMode = false; selectedSlot = null;
+    $('editBtn').textContent = '편집';
+    $('saveScheduleRow').style.display = '';
+    $('saveScheduleStatus').textContent = '';
+    renderResult(lastResult);
+    $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    alert('일정 불러오기 실패: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '수정';
   }
 });
 
@@ -2152,8 +2206,9 @@ async function boot() {
     }
     renderPeople();
     updateStatus();
-    // 최신 일정 표시
+    // 최신 일정 표시 + 수정 버튼 노출
     $('latestScheduleSection').style.display = '';
+    $('editLatestBtn').style.display = '';
     try {
       const schedule = await API.getLatestSchedule();
       if (schedule && schedule.weekId) {
