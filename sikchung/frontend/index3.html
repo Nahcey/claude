@@ -1479,6 +1479,61 @@ function solveGreedy(active) {
   // (이전에 있던 'Phase 4 last-resort: 주말 인원의 평일 overflow' 단계는 제거.
   //  주말에 한 번 들어간 인원은 어떠한 평일 슬롯에도 넣지 않음.)
 
+  // ---- Guarantee pass: 미배정 active 인원에게 최소 1슬롯 보장 ----
+  // double 인원이 여러 명일 때 cap 선점으로 non-double 인원이 배정을 못 받는 경우 방지.
+  // 2패스: (1) double incumbent counts>2 우선 양보,
+  //        (2) 없으면 counts>=2인 incumbent 양보 (양보 후에도 ≥1슬롯 유지).
+  // 주말 슬롯 우선(평일 atomic 페어 보존), 그 다음 평일.
+  const needsSlot = active.filter(p =>
+    counts.get(p.id) === 0 && !p.restricted.every(x => x)
+  );
+  const slotOrder = [];
+  for (let d = 10; d < SLOTS_COUNT; d++) slotOrder.push(d); // 주말 먼저
+  for (let d = 0; d < 10; d++) slotOrder.push(d);           // 평일 나중
+  for (const u of needsSlot) {
+    let placed = false;
+    // 1패스: double(counts>2) 슬롯에서 양보
+    outer1:
+    for (const d of slotOrder) {
+      if (u.restricted[d]) continue;
+      for (let pos = 0; pos < SLOTS_PER_DAY; pos++) {
+        const inc = schedule[d][pos];
+        if (!inc) {
+          schedule[d][pos] = u;
+          counts.set(u.id, counts.get(u.id) + 1);
+          if (d >= 10) wkndCounts.set(u.id, wkndCounts.get(u.id) + 1);
+          placed = true; break outer1;
+        }
+        if (inc.double && counts.get(inc.id) > 2) {
+          schedule[d][pos] = u;
+          counts.set(u.id, counts.get(u.id) + 1);
+          if (d >= 10) wkndCounts.set(u.id, wkndCounts.get(u.id) + 1);
+          counts.set(inc.id, counts.get(inc.id) - 1);
+          if (d >= 10) wkndCounts.set(inc.id, wkndCounts.get(inc.id) - 1);
+          placed = true; break outer1;
+        }
+      }
+    }
+    if (placed) continue;
+    // 2패스: double 슬롯을 쓸 수 없으면(제한 등) counts>=2인 누구든 1슬롯 양보
+    // (양보자는 최소 1슬롯 유지: counts>=2이므로 양보 후 >=1)
+    outer2:
+    for (const d of slotOrder) {
+      if (u.restricted[d]) continue;
+      for (let pos = 0; pos < SLOTS_PER_DAY; pos++) {
+        const inc = schedule[d][pos];
+        if (inc && counts.get(inc.id) >= 2) {
+          schedule[d][pos] = u;
+          counts.set(u.id, counts.get(u.id) + 1);
+          if (d >= 10) wkndCounts.set(u.id, wkndCounts.get(u.id) + 1);
+          counts.set(inc.id, counts.get(inc.id) - 1);
+          if (d >= 10) wkndCounts.set(inc.id, wkndCounts.get(inc.id) - 1);
+          break outer2;
+        }
+      }
+    }
+  }
+
   const assignedIds = new Set();
   for (const day of schedule) for (const p of day) if (p) assignedIds.add(p.id);
   const failed = active
