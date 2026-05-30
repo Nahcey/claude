@@ -6,3 +6,4 @@ outputs.json
 *.env
 .env.*
 *.zip
+*.zip

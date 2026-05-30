@@ -56,24 +56,11 @@
   function logout() {
     const { cognitoDomain, clientId, redirectUri } = cfg();
     clearTokens();
-<<<<<<< Updated upstream
-    localStorage.setItem('sikchung_logged_out', '1'); // 자동 리다이렉트 억제 플래그
-    console.log('[Auth] logout: clearing Cognito session');
-    // Cognito /logout 엔드포인트로 리다이렉트 → 서버측 세션 쿠키 삭제
-    // logout_uri 는 UserPoolClient.LogoutURLs 에 등록된 값과 문자 단위로 일치해야 함
-    if (cognitoDomain && clientId) {
-      const url = new URL(cognitoDomain + '/logout');
-      url.searchParams.set('client_id', clientId);
-      url.searchParams.set('logout_uri', redirectUri || (window.location.origin + window.location.pathname));
-      window.location.href = url.toString();
-    } else {
-      // APP_CONFIG 미로드 시 폴백 (Cognito 세션은 남을 수 있음)
-      window.location.href = window.location.origin + window.location.pathname;
-    }
-=======
     localStorage.setItem('sikchung_logged_out', '1');
-    window.location.href = window.location.origin + window.location.pathname;
->>>>>>> Stashed changes
+    const url = new URL(cognitoDomain + '/logout');
+    url.searchParams.set('client_id', clientId);
+    url.searchParams.set('logout_uri', redirectUri);
+    window.location.href = url.toString();
   }
 
   async function _tokenRequest(params) {
