@@ -15,7 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=_lib.sh
 source "$SCRIPT_DIR/_lib.sh"
 
-GROUPS=(A B C D E)
+# GROUPS는 bash 내장 특수 변수(사용자 Linux 그룹 ID 목록)이므로 GRP_ORDER 사용
+GRP_ORDER=(A B C D E)
 
 load_outputs
 
@@ -35,7 +36,7 @@ echo ""
 # ── 현재 그룹 분포 출력 ──────────────────────────────────────────────────────
 echo "현재 그룹 분포:"
 declare -A GROUP_COUNT
-for g in "${GROUPS[@]}"; do
+for g in "${GRP_ORDER[@]}"; do
   cnt=$(echo "$ITEMS" | jq --arg g "$g" '[.[] | select(.group.S == $g)] | length')
   GROUP_COUNT[$g]=$cnt
   printf "  %s : %d명\n" "$g" "$cnt"
@@ -46,7 +47,7 @@ echo ""
 
 # ── 빈 그룹 감지 (A부터 순서대로 첫 번째만) ────────────────────────────────
 EMPTY_GROUP=""
-for g in "${GROUPS[@]}"; do
+for g in "${GRP_ORDER[@]}"; do
   if [ "${GROUP_COUNT[$g]}" -eq 0 ]; then
     EMPTY_GROUP="$g"
     break
@@ -62,23 +63,22 @@ echo "빈 그룹 감지: $EMPTY_GROUP"
 echo ""
 
 # ── 이동 계획 수립 (빈 그룹 아래의 그룹들을 한 단계 위로) ──────────────────
-# EMPTY_GROUP보다 아래에 있는 그룹의 인원을 찾아 한 단계 위로 이동
 declare -a PLAN_FROM=()
 declare -a PLAN_TO=()
 
 # 그룹 인덱스 찾기 (A=0, B=1, C=2, D=3, E=4)
 EMPTY_IDX=-1
-for i in "${!GROUPS[@]}"; do
-  if [ "${GROUPS[$i]}" = "$EMPTY_GROUP" ]; then
+for i in "${!GRP_ORDER[@]}"; do
+  if [ "${GRP_ORDER[$i]}" = "$EMPTY_GROUP" ]; then
     EMPTY_IDX=$i
     break
   fi
 done
 
 # 빈 그룹 아래의 그룹들 (empty+1 ~ 4) 각각 한 단계 위로
-for (( i=EMPTY_IDX+1; i<${#GROUPS[@]}; i++ )); do
-  from="${GROUPS[$i]}"
-  to="${GROUPS[$((i-1))]}"
+for (( i=EMPTY_IDX+1; i<${#GRP_ORDER[@]}; i++ )); do
+  from="${GRP_ORDER[$i]}"
+  to="${GRP_ORDER[$((i-1))]}"
   cnt="${GROUP_COUNT[$from]}"
   if [ "$cnt" -gt 0 ]; then
     PLAN_FROM+=("$from")
@@ -143,7 +143,7 @@ ITEMS_AFTER=$(aws dynamodb query \
   --expression-attribute-values '{":pk":{"S":"MEMBER"}}' \
   --output json | jq '.Items')
 
-for g in "${GROUPS[@]}"; do
+for g in "${GRP_ORDER[@]}"; do
   cnt=$(echo "$ITEMS_AFTER" | jq --arg g "$g" '[.[] | select(.group.S == $g)] | length')
   printf "  %s : %d명\n" "$g" "$cnt"
 done
