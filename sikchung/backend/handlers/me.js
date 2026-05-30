@@ -73,6 +73,17 @@ exports.handler = async (event) => {
         // member는 priority 필드를 조용히 무시한다
       }
 
+      if ('group' in body) {
+        if (body.group !== null && !['A','B','C','D','E'].includes(body.group))
+          return badRequest('group must be A, B, C, D, E, or null');
+        update.group = body.group;
+      }
+
+      if ('excluded' in body) {
+        if (typeof body.excluded !== 'boolean') return badRequest('excluded must be boolean');
+        update.excluded = body.excluded;
+      }
+
       const existing = (await getMember(userSub)) ?? {};
       const saved    = await putMember(userSub, { ...existing, ...update });
       const { PK, SK, ...result } = saved;

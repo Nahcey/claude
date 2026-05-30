@@ -49,12 +49,14 @@ exports.handler = async (event) => {
         return badRequest('Invalid JSON body');
       }
 
-      const { username, email, role, displayName, temporaryPassword } = body;
+      const { username, email, role, displayName, temporaryPassword, group } = body;
       const cognitoUsername = username || email;   // username 우선, 없으면 email
       if (!cognitoUsername)   return badRequest('username (or email) is required');
       if (!role)              return badRequest('role is required');
       if (!CHANGEABLE_ROLES.includes(role)) return badRequest('role must be leader or member');
       if (!temporaryPassword) return badRequest('temporaryPassword is required');
+      if (group !== undefined && group !== null && !['A','B','C','D','E'].includes(group))
+        return badRequest('group must be A, B, C, D, E, or null');
 
       let createdSub;
       try {
@@ -88,6 +90,8 @@ exports.handler = async (event) => {
         double: false,
         rookie: false,
         priority: 0,
+        ...(group != null ? { group } : {}),
+        excluded: false,
       });
 
       return created({ sub: createdSub, username: cognitoUsername, role });

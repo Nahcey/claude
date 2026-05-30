@@ -279,6 +279,10 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
 .pc-mini.pri { background: #FEF3C7; color: #92400E; }
 .pc-mini.res { background: #E0E7FF; color: #3730A3; }
 .pc-mini.rkk { background: #DBEAFE; color: #1E40AF; }
+.pc-mini.grp { background: #F3F4F6; color: #374151; }
+.pc-mini.exc { background: #E5E7EB; color: #9CA3AF; }
+.person-card.excluded { opacity: 0.45; }
+.person-card .pc-ts { margin-top: 4px; font-size: 9px; color: var(--muted); }
 
 /* Modal */
 .modal-overlay {
@@ -443,6 +447,24 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
             </div>
             <div class="switch" id="modalRookie"></div>
           </div>
+          <div class="inline-toggle" id="modalExcludedRow" style="margin-top:8px;">
+            <div>
+              <div class="label-text">일정 제외</div>
+              <div class="label-sub">배정 후보에서만 제외, 계정·설정 유지</div>
+            </div>
+            <div class="switch" id="modalExcluded"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">기수 그룹</label>
+          <select id="modalGroup" style="padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px; background:var(--card); color:var(--ink);">
+            <option value="">미지정</option>
+            <option value="A">A (최고참)</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+            <option value="E">E (신참)</option>
+          </select>
         </div>
         <div class="field" style="display:none;">
           <label class="field-label" for="modalPriority">미배정 우선순위 (0 ~ 99)</label>
@@ -450,7 +472,7 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
         </div>
       </div>
       <div class="modal-foot">
-        <button class="btn btn-danger" id="modalDelete" style="background:#FEE2E2;color:var(--red);padding:8px 14px;font-weight:500;">삭제</button>
+        <div></div>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-secondary" id="modalReset">초기화</button>
           <button class="btn btn-primary" id="modalDone">닫기</button>
@@ -601,8 +623,9 @@ function normalizePerson(p) {
     restricted: migrateRestricted(p.restricted),
     double: !!p.double,
     priority: Number.isFinite(p.priority) ? Math.max(0, Math.min(99, p.priority)) : 0,
-    group: (p.group === 'A' || p.group === 'B' || p.group === 'C') ? p.group : (DEFAULT_GROUPS[p.name] || null),
-    rookie: !!p.rookie
+    group: (['A','B','C','D','E'].includes(p.group)) ? p.group : (DEFAULT_GROUPS[p.name] || null),
+    rookie: !!p.rookie,
+    excluded: !!p.excluded,
   };
 }
 
@@ -644,6 +667,7 @@ function initPeople() {
     double: false, // index2 디폴트: 주 2회 OFF
     priority: DEFAULT_NAMES.length - i,
     group: DEFAULT_GROUPS[name] || null,
+    excluded: false,
     rookie: false
   }));
 }
@@ -674,7 +698,7 @@ function renderPeople() {
   for (const p of people) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'person-card';
+    card.className = 'person-card' + (p.excluded ? ' excluded' : '');
     card.addEventListener('click', () => openEditor(p.id));
 
     const name = document.createElement('div');
@@ -702,6 +726,18 @@ function renderPeople() {
       const b = document.createElement('span');
       b.className = 'pc-mini res';
       b.textContent = `제한 ${resCount}칸`;
+      meta.appendChild(b);
+    }
+    if (p.group) {
+      const b = document.createElement('span');
+      b.className = 'pc-mini grp';
+      b.textContent = p.group;
+      meta.appendChild(b);
+    }
+    if (p.excluded) {
+      const b = document.createElement('span');
+      b.className = 'pc-mini exc';
+      b.textContent = '제외';
       meta.appendChild(b);
     }
     card.appendChild(meta);
@@ -751,6 +787,7 @@ function _syncPersonToApi(p) {
   const payload = {
     name: p.name, restricted: p.restricted,
     double: p.double, rookie: p.rookie, priority: p.priority,
+    group: p.group ?? null, excluded: !!p.excluded,
   };
   if (_currentUser && _currentUser.isLeader && p.sub) {
     API.putMember(p.sub, payload).catch(e => console.error('[sync] putMember:', e));
@@ -765,8 +802,6 @@ function openEditor(personId) {
   editingId = personId;
   modalNameEl.textContent = p.name;
   renderModalBody();
-  // 비관리자는 삭제 불가 (API 모드), 오프라인 모드는 항상 표시
-  $('modalDelete').style.display = (_apiMode && _currentUser && !_currentUser.isAdmin) ? 'none' : '';
   modalOverlay.classList.add('open');
 }
 
@@ -877,6 +912,8 @@ function renderModalBody() {
   // 스위치 및 입력 동기화
   modalDouble.classList.toggle('on', !!p.double);
   modalRookie.classList.toggle('on', !!p.rookie);
+  $('modalExcluded').classList.toggle('on', !!p.excluded);
+  $('modalGroup').value = p.group || '';
   modalPriority.value = p.priority;
 }
 
@@ -914,22 +951,21 @@ modalPriority.addEventListener('input', () => {
   autoSave();
 });
 
-// 삭제
-$('modalDelete').addEventListener('click', () => {
+// 일정 제외 토글
+$('modalExcluded').addEventListener('click', () => {
   const p = editingPerson();
   if (!p) return;
-  if (!confirm(`'${p.name}' 인원을 삭제하시겠습니까?`)) return;
-  (async () => {
-    if (_apiMode && p.sub && _currentUser && _currentUser.isAdmin) {
-      try { await API.deleteUser(p.sub); }
-      catch (e) { alert('삭제 실패: ' + e.message); return; }
-    }
-    people = people.filter(x => x.id !== editingId);
-    closeEditor();
-    savePeople();
-    renderPeople();
-    updateStatus();
-  })();
+  p.excluded = !p.excluded;
+  $('modalExcluded').classList.toggle('on', p.excluded);
+  autoSave();
+});
+
+// 기수 그룹 변경
+$('modalGroup').addEventListener('change', () => {
+  const p = editingPerson();
+  if (!p) return;
+  p.group = $('modalGroup').value || null;
+  autoSave();
 });
 
 // 해당 인원 설정만 초기화 (모달은 열린 상태 유지)
@@ -1019,7 +1055,8 @@ $('addBtn').addEventListener('click', () => {
     double: false, // index2 디폴트: 주 2회 OFF
     priority: 0,
     group: DEFAULT_GROUPS[name] || null,
-    rookie: false
+    rookie: false,
+    excluded: false,
   });
   input.value = '';
   savePeople();
@@ -1099,25 +1136,19 @@ function emptySchedule() {
 }
 
 // 쌍 (a,b)의 기본 선호도. 높을수록 우선.
-//   1. 신병 + A/B 파트너          → 100  (최우선)
-//   2. 같은 그룹 쌍                →  10
-//   3. 신병 + C 파트너            →   1  (불가피한 fallback)
-//   4. 그 외                        →   0
+//   1. 신병 + A/B 파트너          → 100  (최우선: 상위 기수와 묶기)
+//   2. 신병 + C/D/E/미지정 파트너 →   1  (불가피한 fallback)
+//   3. 그 외                        →   0
 function pairPreference(a, b) {
   const aIsRookie = !!a.rookie, bIsRookie = !!b.rookie;
   if (aIsRookie || bIsRookie) {
-    const rookie  = aIsRookie ? a : b;
     const partner = aIsRookie ? b : a;
-    // 신병끼리 묶이는 경우: 두 사람 모두 A/B여야 최우선, 아니면 일반 fallback
+    // 신병끼리 묶이는 경우: 둘 다 A/B면 최우선, 아니면 fallback
     if (aIsRookie && bIsRookie) {
-      const okA = (a.group === 'A' || a.group === 'B') && (b.group === 'A' || b.group === 'B');
-      return okA ? 100 : 1;
+      return ((a.group === 'A' || a.group === 'B') && (b.group === 'A' || b.group === 'B')) ? 100 : 1;
     }
-    if (partner.group === 'A' || partner.group === 'B') return 100;
-    if (partner.group === 'C') return 1;
-    return 1; // 그룹 미지정 파트너 — fallback
+    return (partner.group === 'A' || partner.group === 'B') ? 100 : 1;
   }
-  if (a.group && a.group === b.group) return 10;
   return 0;
 }
 
@@ -1485,7 +1516,7 @@ function solveGreedy(active) {
 
 function generate() {
   // 1단계: 우선순위 스킵
-  const { active, skipped } = applySkipPriority(people);
+  const { active, skipped } = applySkipPriority(people.filter(p => !p.excluded));
 
   // 2단계: 그리디 다회 시도로 초기 best 후보 확보 (branch-and-bound pruning 용 lower bound)
   let res = null;

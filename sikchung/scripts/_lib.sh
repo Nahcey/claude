@@ -75,11 +75,13 @@ user_exists() {
     >/dev/null 2>&1
 }
 
-# MEMBER DynamoDB 레코드 생성 (default 값). 인자: sub username name
+# MEMBER DynamoDB 레코드 생성 (default 값). 인자: sub username name [group]
+# group: A~E 중 하나 또는 빈 문자열(미지정)
 put_member_default() {
   local sub="$1"
   local username="$2"
   local name="$3"
+  local group="${4:-}"
   local ts
   ts="$(date -u +%FT%TZ)"
   local item
@@ -88,27 +90,28 @@ put_member_default() {
     --arg username "$username" \
     --arg name     "$name"     \
     --arg ts       "$ts"       \
-    '{
-       PK:         {S: "MEMBER"},
-       SK:         {S: $sub},
+    --arg group    "$group"    \
+    '{ PK: {S: "MEMBER"}, SK: {S: $sub},
        username:   {S: $username},
        name:       {S: $name},
        restricted: {L: [{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false},{BOOL:false}]},
        double:     {BOOL: false},
        rookie:     {BOOL: false},
+       excluded:   {BOOL: false},
        priority:   {N: "0"},
        updatedAt:  {S: $ts}
-     }')
+     }
+     | if $group != "" then . + {group: {S: $group}} else . end')
   aws dynamodb put-item \
     --table-name "$TABLE_NAME" \
     --region "$AWS_REGION" \
     --item "$item" >/dev/null
 }
 
-# Cognito 사용자 1명 생성 + 그룹 추가 + MEMBER 레코드. 인자: username name role tempPw
-# 반환: 0=생성, 2=이미 존재(스킵)
+# Cognito 사용자 1명 생성 + 그룹 추가 + MEMBER 레코드. 인자: username name role tempPw [group]
+# group: A~E 중 하나 또는 빈 문자열(미지정). 반환: 0=생성, 2=이미 존재(스킵)
 create_cognito_user() {
-  local username="$1" name="$2" role="$3" temp_pw="$4"
+  local username="$1" name="$2" role="$3" temp_pw="$4" group="${5:-}"
   if user_exists "$username"; then
     return 2
   fi
@@ -130,6 +133,6 @@ create_cognito_user() {
     --username "$username" \
     --group-name "$role" >/dev/null
 
-  put_member_default "$sub" "$username" "$name"
+  put_member_default "$sub" "$username" "$name" "$group"
   return 0
 }

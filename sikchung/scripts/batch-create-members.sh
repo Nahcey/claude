@@ -12,20 +12,21 @@ TEMP_PW="${1:-TempPass123!}"
 
 validate_password "$TEMP_PW" || { echo "비밀번호 정책 위반" >&2; exit 1; }
 
-# 고정 매핑 (username:이름). 순서 = 인원 카드 표시 순서.
+# 고정 매핑 (username:이름:그룹). 순서 = 인원 카드 표시 순서.
+# 그룹: A=최고참, B, C, D, E=신참 (빈 문자열=미지정)
 MEMBERS=(
-  "wjdqhwndeo01:이동민"
-  "wjdqhwndeo02:김기환"
-  "wjdqhwndeo03:정우진"
-  "wjdqhwndeo04:윤민형"
-  "wjdqhwndeo05:한우현"
-  "wjdqhwndeo06:권정훈"
-  "wjdqhwndeo07:정한결"
-  "wjdqhwndeo08:김최원"
-  "wjdqhwndeo09:오승호"
-  "wjdqhwndeo11:권기범"
-  "wjdqhwndeo12:최정협"
-  "wjdqhwndeo13:전유찬"
+  "wjdqhwndeo01:이동민:A"
+  "wjdqhwndeo02:김기환:A"
+  "wjdqhwndeo03:정우진:A"
+  "wjdqhwndeo04:윤민형:B"
+  "wjdqhwndeo05:한우현:B"
+  "wjdqhwndeo06:권정훈:B"
+  "wjdqhwndeo07:정한결:B"
+  "wjdqhwndeo08:김최원:B"
+  "wjdqhwndeo09:오승호:C"
+  "wjdqhwndeo11:권기범:C"
+  "wjdqhwndeo12:최정협:C"
+  "wjdqhwndeo13:전유찬:C"
 )
 
 load_outputs
@@ -37,9 +38,12 @@ echo ""
 
 for entry in "${MEMBERS[@]}"; do
   username="${entry%%:*}"
-  name="${entry#*:}"
-  if create_cognito_user "$username" "$name" member "$TEMP_PW"; then
-    echo "  ✓ 생성  $username = $name"
+  rest="${entry#*:}"
+  name="${rest%%:*}"
+  group="${rest#*:}"
+  [ "$group" = "$name" ] && group=""   # 콜론이 하나뿐이면 group 없음
+  if create_cognito_user "$username" "$name" member "$TEMP_PW" "$group"; then
+    echo "  ✓ 생성  $username = $name${group:+ [그룹 $group]}"
     CREATED=$((CREATED + 1))
   else
     rc=$?
@@ -57,9 +61,11 @@ echo ""
 echo "──────────────────────────────────────────"
 echo "결과: 생성 $CREATED · 스킵 $SKIPPED · 총 ${#MEMBERS[@]}"
 echo "──────────────────────────────────────────"
-printf "%-16s %s\n" "아이디" "이름"
+printf "%-16s %-12s %s\n" "아이디" "이름" "그룹"
 for entry in "${MEMBERS[@]}"; do
-  printf "%-16s %s\n" "${entry%%:*}" "${entry#*:}"
+  username="${entry%%:*}"; rest="${entry#*:}"; name="${rest%%:*}"; grp="${rest#*:}"
+  [ "$grp" = "$name" ] && grp="-"
+  printf "%-16s %-12s %s\n" "$username" "$name" "$grp"
 done
 echo ""
 echo "전원 member 권한. 분대장 지정: bash scripts/set-role.sh wjdqhwndeoNN leader"

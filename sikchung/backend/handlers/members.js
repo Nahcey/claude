@@ -60,6 +60,17 @@ exports.handler = async (event) => {
         update.priority = body.priority;      // leader/admin이므로 무조건 허용
       }
 
+      if ('group' in body) {
+        if (body.group !== null && !['A','B','C','D','E'].includes(body.group))
+          return badRequest('group must be A, B, C, D, E, or null');
+        update.group = body.group;
+      }
+
+      if ('excluded' in body) {
+        if (typeof body.excluded !== 'boolean') return badRequest('excluded must be boolean');
+        update.excluded = body.excluded;
+      }
+
       const existing = await getMember(sub);
       if (!existing) return notFound('Member not found');
 
