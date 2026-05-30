@@ -2152,6 +2152,16 @@ async function boot() {
     }
     renderPeople();
     updateStatus();
+    // 최신 일정 표시
+    $('latestScheduleSection').style.display = '';
+    try {
+      const schedule = await API.getLatestSchedule();
+      if (schedule && schedule.weekId) {
+        $('latestWeekId').textContent = '(' + schedule.weekId + ')'
+          + (schedule.generatedAt ? ' · 생성 ' + fmtKST(schedule.generatedAt) : '');
+        renderReadOnlySchedule(schedule.scheduleData);
+      }
+    } catch (e) { console.error('[boot] getLatestSchedule:', e); }
   } else {
     // 일반 멤버: 자기 카드 + 최신 일정
     $('generateSection').style.display = 'none';
