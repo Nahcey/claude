@@ -279,6 +279,7 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
 .pc-mini.pri { background: #FEF3C7; color: #92400E; }
 .pc-mini.res { background: #E0E7FF; color: #3730A3; }
 .pc-mini.rkk { background: #DBEAFE; color: #1E40AF; }
+.person-card .pc-ts { margin-top: 4px; font-size: 9px; color: var(--muted); }
 
 /* Modal */
 .modal-overlay {
@@ -477,6 +478,7 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
       </table>
     </div>
     <p id="latestScheduleEmpty" style="color:var(--muted); font-size:13px; margin-top:8px;">저장된 일정이 없습니다.</p>
+    <p id="latestScheduleGenTime" style="color:var(--muted); font-size:11px; margin-top:6px;"></p>
   </div>
 
   <!-- Result -->
@@ -657,6 +659,20 @@ const peopleGrid = $('peopleGrid');
 // ============================================================
 // 인원 그리드 — 이름만 보이는 컴팩트 카드
 // ============================================================
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const get = t => parts.find(p => p.type === t).value;
+  return `${get('month')}월 ${get('day')}일 ${get('hour')}:${get('minute')}`;
+}
+
 function renderPeople() {
   peopleGrid.innerHTML = '';
   for (const p of people) {
@@ -693,6 +709,13 @@ function renderPeople() {
       meta.appendChild(b);
     }
     card.appendChild(meta);
+
+    if (p.updatedAt) {
+      const ts = document.createElement('div');
+      ts.className = 'pc-ts';
+      ts.textContent = fmtDate(p.updatedAt);
+      card.appendChild(ts);
+    }
 
     peopleGrid.appendChild(card);
   }
@@ -1966,7 +1989,7 @@ $('backBtn').addEventListener('click', () => {
 // 헤더 우상단 "updated: YYYY-MM-DD" — 파일이 변경될 때마다 아래 상수를
 // 그 시점 한국 표준시(KST) 날짜로 직접 수정해서 유지한다.
 // ============================================================
-const UPDATED_AT = '2026-05-29'; // KST, HTML 파일 변경 시 함께 갱신
+const UPDATED_AT = '2026-05-30'; // KST, HTML 파일 변경 시 함께 갱신
 (function showUpdated() {
   $('updatedLabel').textContent = `updated: ${UPDATED_AT}`;
 })();
@@ -1978,6 +2001,7 @@ function _mapMembersTopeople(members) {
   return (members || []).map((m, i) => {
     const p = normalizePerson({ ...m, id: i + 1 });
     p.sub = m.sub;
+    p.updatedAt = m.updatedAt || null;
     return p;
   });
 }
@@ -1985,6 +2009,7 @@ function _mapMembersTopeople(members) {
 function _mapMeToPersonEntry(me) {
   const p = normalizePerson({ ...me, id: 1 });
   p.sub = _currentUser.sub;
+  p.updatedAt = me.updatedAt || null;
   // displayName(한글 이름)을 본인 카드 이름으로 사용 (생성 시점에 박혀있음)
   if (!p.name) p.name = _currentUser.displayName || _currentUser.username || '';
   return p;
@@ -2086,9 +2111,9 @@ async function boot() {
     console.log('[boot] not logged in | loggedOutFlag:', loggedOutFlag, '| wasCallback:', wasCallback);
     $('loginBtn').style.display = '';
     $('loginBtn').addEventListener('click', () => Auth && Auth.login());
-    const justLoggedOut = localStorage.getItem('sikchung_logged_out');
-    if (justLoggedOut) {
-    } else if (window.Auth) {
+    if (!loggedOutFlag && !wasCallback && window.Auth) {
+      // 처음 방문: 자동으로 Cognito 로그인 화면으로 이동
+      console.log('[boot] first visit → Auth.login()');
       Auth.login();
     } else {
       // 로그아웃 후 or 콜백 실패: 로그인 버튼만 표시 (자동 리다이렉트 없음)
@@ -2102,9 +2127,7 @@ async function boot() {
   _apiMode = true;
   _currentUser = Permissions.getCurrentUser();
   showAuthBar(_currentUser);
-  $('logoutBtn').addEventListener('click', () => {
-    Auth.logout();
-  });
+  $('logoutBtn').addEventListener('click', () => Auth.logout()); // logout()이 플래그 설정
   $('loginBtn').addEventListener('click', () => Auth.login());
   $('addRow').style.display = 'none'; // 인원 추가는 관리자 도구에서
 
@@ -2137,6 +2160,9 @@ async function boot() {
       const schedule = await API.getLatestSchedule();
       if (schedule && schedule.weekId) {
         $('latestWeekId').textContent = '(' + schedule.weekId + ')';
+        if (schedule.generatedAt) {
+          $('latestScheduleGenTime').textContent = '생성: ' + fmtDate(schedule.generatedAt);
+        }
         renderReadOnlySchedule(schedule.scheduleData);
       }
     } catch (e) { console.error('[boot] getLatestSchedule:', e); }
