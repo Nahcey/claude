@@ -1208,7 +1208,7 @@ function solveBacktrack(active, timeBudgetMs = 600) {
   let currentFilled = 0;
 
   function tryUpdateBest() {
-    const sc = scoreSchedule(schedule);
+    const sc = scoreSchedule(schedule, active);
     if (!best || compareSchedules(sc, best.score) < 0) {
       best = { schedule: snapshot(), score: sc };
     }
@@ -1282,19 +1282,27 @@ function solveBacktrack(active, timeBudgetMs = 600) {
 }
 
 // 일정 점수 — 비교 우선순위:
-//   1) 채워진 슬롯 수 (높을수록 좋음, "미배정 슬롯 최소" = 1순위)
+//   0) 배정 가능한데 미배정된 인원 수 (적을수록 좋음 — "전원 최소 1슬롯" 최우선)
+//   1) 채워진 슬롯 수 (높을수록 좋음, "미배정 슬롯 최소")
 //   2) 평일에 1슬롯만 들어간 인원 수 (적을수록 좋음 — atomic 페어가 우선)
 //   3) 주말 인원 overflow 최소
 //   4) 같은 요일 아침↔저녁 연속성
 //   5) 한 번이라도 배정된 인원 수
 //   6) 쌍 선호도 합 (신병/같은그룹)
-function scoreSchedule(schedule) {
+function scoreSchedule(schedule, active) {
   let filled = 0;
   const idSet = new Set();
   let pref = 0;
   for (const day of schedule) {
     for (const p of day) if (p) { filled++; idSet.add(p.id); }
     if (day[0] && day[1]) pref += pairPreference(day[0], day[1]);
+  }
+  // 배정 가능한데 미배정된 인원 수 (모든 슬롯 제한 ≠ 가능, excluded 는 active 에서 이미 제외됨)
+  let unassignedEligible = 0;
+  if (Array.isArray(active)) {
+    for (const p of active) {
+      if (!idSet.has(p.id) && !p.restricted.every(x => x)) unassignedEligible++;
+    }
   }
   // 같은 요일 연속성
   let continuity = 0;
@@ -1321,9 +1329,12 @@ function scoreSchedule(schedule) {
   for (let i = 0; i < 10; i++) {
     for (const p of schedule[i]) if (p && weekendIds.has(p.id)) weekendOverflow++;
   }
-  return { filled, weekdayLone, weekendOverflow, continuity, people: idSet.size, pref };
+  return { unassignedEligible, filled, weekdayLone, weekendOverflow, continuity, people: idSet.size, pref };
 }
 function compareSchedules(a, b) {
+  // 0순위: 배정 가능한데 미배정된 인원 수 최소화 (전원 최소 1슬롯 우선)
+  const ua = a.unassignedEligible || 0, ub = b.unassignedEligible || 0;
+  if (ua !== ub) return ua - ub;
   if (a.filled !== b.filled) return b.filled - a.filled;
   if (a.weekdayLone !== b.weekdayLone) return a.weekdayLone - b.weekdayLone;
   if (a.weekendOverflow !== b.weekendOverflow) return a.weekendOverflow - b.weekendOverflow;
@@ -1380,13 +1391,17 @@ function solveGreedy(active) {
       wkndCounts.get(p.id) === 0
     );
     both.sort((a, b) => {
-      // 1) double 인원이 non-double보다 먼저 (2일 배정 필요 → 선점)
-      const aD = a.double ? 0 : 1, bD = b.double ? 0 : 1;
-      if (aD !== bD) return aD - bD;
-      // 2) double끼리(또는 non-double끼리): counts 적은 사람 우선, 동점이면 랜덤
-      //    → 여러 double 인원이 있을 때 균등하게 배정 기회를 가짐
+      // 라운드 A: 아직 한 번도 배정 안 된 인원(counts===0)을 최우선 (double 여부 무관)
+      //   → 소수 double 인원이 처음부터 4슬롯 선점하는 것을 막고 전원에게 1슬롯씩 우선 배정
+      const aFresh = counts.get(a.id) === 0 ? 0 : 1;
+      const bFresh = counts.get(b.id) === 0 ? 0 : 1;
+      if (aFresh !== bFresh) return aFresh - bFresh;
+      // counts 적은 사람 우선 (공정)
       const dc = counts.get(a.id) - counts.get(b.id);
       if (dc !== 0) return dc;
+      // 라운드 B: 남는 슬롯을 누가 더 가져갈지는 double 우선 (counts 동점일 때만 적용)
+      const aD = a.double ? 0 : 1, bD = b.double ? 0 : 1;
+      if (aD !== bD) return aD - bD;
       return Math.random() - 0.5;
     });
     // 위에서 2명을 골라 morning + evening 양쪽에 동일하게 배정
@@ -1555,7 +1570,7 @@ function generate() {
   const grAttempts = 30;
   for (let t = 0; t < grAttempts; t++) {
     const gr = solveGreedy(active);
-    const sc = scoreSchedule(gr.schedule);
+    const sc = scoreSchedule(gr.schedule, active);
     if (!bestScore || compareSchedules(sc, bestScore) < 0) {
       bestScore = sc;
       res = { schedule: gr.schedule };
@@ -1569,7 +1584,7 @@ function generate() {
   for (let t = 0; t < btAttempts; t++) {
     const r = solveBacktrack(active, btBudget);
     if (!r) continue;
-    const sc = scoreSchedule(r.schedule);
+    const sc = scoreSchedule(r.schedule, active);
     if (!bestScore || compareSchedules(sc, bestScore) < 0) {
       bestScore = sc;
       res = r;
