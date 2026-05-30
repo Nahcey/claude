@@ -683,7 +683,13 @@ function fmtKST(iso) {
 
 function renderPeople() {
   peopleGrid.innerHTML = '';
-  for (const p of people) {
+  const nameOrder = Object.fromEntries(DEFAULT_NAMES.map((n, i) => [n, i]));
+  const sorted = [...people].sort((a, b) => {
+    const ai = nameOrder[a.name] ?? Infinity;
+    const bi = nameOrder[b.name] ?? Infinity;
+    return ai - bi;
+  });
+  for (const p of sorted) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'person-card' + (p.excluded ? ' excluded' : '');
@@ -2017,7 +2023,7 @@ function _mapMeToPersonEntry(me) {
 }
 
 function showAuthBar(user) {
-  const roleName  = user.isAdmin ? '관리자' : user.isLeader ? '리더' : '멤버';
+  const roleName  = user.isAdmin ? '관리자' : user.isLeader ? '분대장' : '분대원';
   const roleColor = user.isAdmin ? '#7C3AED' : user.isLeader ? 'var(--primary)' : 'var(--green)';
   $('userDisplayName').textContent = user.displayName || user.username;
   $('userRoleBadge').textContent   = roleName;
