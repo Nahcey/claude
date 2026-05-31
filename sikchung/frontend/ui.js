@@ -332,7 +332,7 @@ function recomputeStats() {
   for (const day of lastResult.schedule) {
     emptySlots += SLOTS_PER_DAY - day.filter(Boolean).length;
   }
-  // 부담(load) unit 재계산 (주말 슬롯 = 2 → 주말+평일 = 3)
+  // 부담(load) unit 재계산 (평일 슬롯=1, 주말 슬롯=2)
   lastResult.assignCount = assignUnitsOf(lastResult.schedule);
   lastResult.emptySlots = emptySlots;
 }

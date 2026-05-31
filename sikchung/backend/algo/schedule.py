@@ -499,9 +499,9 @@ def solve_greedy(active):
 # ── Unit accounting ────────────────────────────────────────────────────────────
 
 def assign_units_of(schedule):
-    """평일 day=1 unit, 주말 슬롯=2 unit. {id: total_units}"""
-    wd_days = {}   # id -> set of weekday day indices
-    we_cnt  = {}   # id -> weekend slot count
+    """평일 슬롯=1 unit, 주말 슬롯=2 unit. {id: total_units}"""
+    wd_cnt = {}   # id -> weekday slot count (raw)
+    we_cnt = {}   # id -> weekend slot count
     for s in range(SLOTS_COUNT):
         for p in schedule[s]:
             if not p or p.get('id') is None:
@@ -509,10 +509,10 @@ def assign_units_of(schedule):
             if s >= 10:
                 we_cnt[p['id']] = we_cnt.get(p['id'], 0) + 1
             else:
-                wd_days.setdefault(p['id'], set()).add(s // 2)
+                wd_cnt[p['id']] = wd_cnt.get(p['id'], 0) + 1
     result = {}
-    for pid in set(wd_days) | set(we_cnt):
-        result[pid] = len(wd_days.get(pid, set())) + we_cnt.get(pid, 0) * 2
+    for pid in set(wd_cnt) | set(we_cnt):
+        result[pid] = wd_cnt.get(pid, 0) + we_cnt.get(pid, 0) * 2
     return result
 
 
