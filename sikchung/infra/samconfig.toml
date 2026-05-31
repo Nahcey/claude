@@ -12,5 +12,6 @@ stack_name         = "sikchung"
 resolve_s3         = true
 capabilities       = "CAPABILITY_IAM"
 region             = "ap-northeast-2"
-no_confirm_changeset     = true
+no_confirm_changeset       = true
 no_fail_on_empty_changeset = true
+resolve_image_repos        = true

@@ -37,8 +37,19 @@ async function generate() {
     emptySlots:  raw.emptySlots || 0,
     assignCount,
     active:      eligible,
+    optimal:     raw.optimal,
   };
   renderResult(lastResult);
+
+  const optSpan = $('optimalStatus');
+  if (optSpan) {
+    if (typeof raw.optimal === 'boolean') {
+      optSpan.textContent  = raw.optimal ? '최적해' : '준최적해';
+      optSpan.style.color  = raw.optimal ? 'var(--green)' : 'var(--muted)';
+    } else {
+      optSpan.textContent = '';
+    }
+  }
 }
 
 // 생성 중 상태 표시 — 버튼 텍스트/disabled + setTimeout 으로 UI 먼저 그리고 무거운 작업 실행
@@ -332,6 +343,8 @@ $('editLatestBtn').addEventListener('click', async () => {
     $('editBtn').textContent = '편집';
     $('saveScheduleRow').style.display = '';
     $('saveScheduleStatus').textContent = '';
+    const optSpanEdit = $('optimalStatus');
+    if (optSpanEdit) optSpanEdit.textContent = '';
     renderResult(lastResult);
     $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {

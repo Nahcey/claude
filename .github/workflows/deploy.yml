@@ -58,17 +58,24 @@ jobs:
         working-directory: sikchung/backend
         run: npm ci
 
-      # ── 6. SAM build ───────────────────────────────────────────────────────
+      # ── 6. QEMU + Buildx (arm64 컨테이너 이미지 빌드용) ──────────────────────
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── 7. SAM build ───────────────────────────────────────────────────────
       - name: SAM build
         working-directory: sikchung/infra
         run: sam build
 
-      # ── 7. SAM deploy ──────────────────────────────────────────────────────
+      # ── 8. SAM deploy ──────────────────────────────────────────────────────
       - name: SAM deploy
         working-directory: sikchung/infra
         run: sam deploy
 
-      # ── 8. 스택 출력값 수집 ────────────────────────────────────────────────
+      # ── 9. 스택 출력값 수집 ────────────────────────────────────────────────
       - name: Get stack outputs
         id: outputs
         run: |
@@ -81,7 +88,7 @@ jobs:
           echo "cognito_domain=$(jq -r '.[] | select(.OutputKey=="CognitoDomain") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
           echo "api_endpoint=$(jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
 
-      # ── 9. Cognito 콜백/로그아웃 URL 을 CloudFront 도메인으로 업데이트 ─────
+      # ── 10. Cognito 콜백/로그아웃 URL 을 CloudFront 도메인으로 업데이트 ────
       # update-user-pool-client 는 전체 교체이므로 OAuth 설정도 함께 명시.
       - name: Update Cognito callback URLs
         run: |
@@ -95,7 +102,7 @@ jobs:
             --allowed-o-auth-flows-user-pool-client \
             --supported-identity-providers COGNITO
 
-      # ── 10. frontend/config.js 자동 생성 ───────────────────────────────────
+      # ── 11. frontend/config.js 자동 생성 ───────────────────────────────────
       # 새 명명규약(cognitoUserPoolId 등) + auth.js 호환 별칭(clientId, redirectUri)
       - name: Generate frontend config
         run: |
@@ -113,15 +120,15 @@ jobs:
           };
           EOF
 
-      # ── 11. 프론트엔드를 S3 로 sync ────────────────────────────────────────
+      # ── 12. 프론트엔드를 S3 로 sync ────────────────────────────────────────
       - name: Sync frontend to S3
         run: aws s3 sync sikchung/frontend/ s3://${{ steps.outputs.outputs.s3_bucket }}/ --delete
 
-      # ── 12. CloudFront 캐시 무효화 ─────────────────────────────────────────
+      # ── 13. CloudFront 캐시 무효화 ─────────────────────────────────────────
       - name: Invalidate CloudFront
         run: aws cloudfront create-invalidation --distribution-id ${{ steps.outputs.outputs.dist_id }} --paths "/*"
 
-      # ── 13. 배포 URL 출력 ──────────────────────────────────────────────────
+      # ── 14. 배포 URL 출력 ──────────────────────────────────────────────────
       - name: Output deployment URL
         run: |
           echo "=== Deployed ==="
@@ -134,7 +141,7 @@ jobs:
             echo "최초 배포 후 CloudFront 전파에 10~20분 소요될 수 있음."
           } >> $GITHUB_STEP_SUMMARY
 
-      # ── 14. 스택 출력값 → Job Summary ──────────────────────────────────────
+      # ── 15. 스택 출력값 → Job Summary ──────────────────────────────────────
       - name: Print stack outputs
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY

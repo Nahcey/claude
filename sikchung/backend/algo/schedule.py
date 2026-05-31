@@ -1,4 +1,5 @@
 """
+구 휴리스틱, 미사용, 참고용.
 Python port of sikchung/frontend/schedule-algo.js.
 Pure computation — no AWS SDK / no I/O.
 Algorithm logic is intentionally unchanged from the JS original;

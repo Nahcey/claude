@@ -229,12 +229,12 @@ Resources:
   GenerateScheduleFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend/
-      Handler: handlers.generate_schedule.handler
-      Runtime: python3.12
+      PackageType: Image
+      ImageConfig:
+        Command: ["handlers.generate_schedule.handler"]
       Architectures: [arm64]
-      Timeout: 15
-      MemorySize: 512
+      Timeout: 28
+      MemorySize: 2048
       Events:
         PostGenerateSchedule:
           Type: HttpApi
@@ -242,6 +242,9 @@ Resources:
             ApiId: !Ref HttpApi
             Method: POST
             Path: /schedule/generate
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ../backend
 
   AdminFunction:
     Type: AWS::Serverless::Function

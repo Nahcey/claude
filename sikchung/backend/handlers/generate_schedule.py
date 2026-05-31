@@ -8,7 +8,7 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from lib.auth import authorize
-from algo.schedule import generate_schedule
+from algo.schedule_cpsat import generate_schedule
 
 _CORS = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
 
@@ -49,4 +49,5 @@ def handler(event, context):
         'fullDays':    result['full_days'],
         'emptySlots':  result['empty_slots'],
         'assignCount': assign_count,
+        'optimal':     result.get('optimal', False),
     })
