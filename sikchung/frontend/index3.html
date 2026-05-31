@@ -1177,6 +1177,8 @@ function solveBacktrack(active, timeBudgetMs = 600) {
   function canTake(p, slotIdx) {
     // mutual exclusion 제거: cap(슬롯 수)만 확인. 같은 슬롯 중복은 호출부에서 방지.
     if (counts.get(p.id) >= capOf(p)) return false;
+    // 주말 슬롯은 2 unit 비용 → 잔여 슬롯 2 이상 필요
+    if (slotIdx >= 10 && capOf(p) - counts.get(p.id) < 2) return false;
     return true;
   }
   function take(p, slotIdx) {
@@ -1396,7 +1398,7 @@ function solveGreedy(active) {
     !inSlot(p, 2*d) && !inSlot(p, 2*d+1) &&
     freePos(2*d) >= 0 && freePos(2*d+1) >= 0;
   const canWknd = (p, s) =>
-    !p.restricted[s] && capOf(p) - counts.get(p.id) >= 1 &&
+    !p.restricted[s] && capOf(p) - counts.get(p.id) >= 2 &&
     !inSlot(p, s) && freePos(s) >= 0;
 
   // ---- 라운드 A: 0 unit 인원에게 1 unit 씩 ----
