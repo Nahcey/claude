@@ -41,6 +41,29 @@ function defaultRestrictedFor(name) {
   return (DEFAULT_RESTRICTED[name] || new Array(SLOTS_COUNT).fill(false)).slice();
 }
 
+// 결과 표시용 부담(load) unit Map: 평일 day=1, 주말 슬롯=2 (주말+평일 = 3 으로 표시).
+// ui.js recomputeStats 및 main.js editLatestBtn 핸들러에서 사용.
+function assignUnitsOf(schedule) {
+  const wdDays = new Map();  // id -> Set(평일 day)
+  const weCnt  = new Map();  // id -> 주말 슬롯 수
+  for (let s = 0; s < SLOTS_COUNT; s++) {
+    for (const p of schedule[s]) {
+      if (!p || p.id == null) continue;
+      if (s >= 10) weCnt.set(p.id, (weCnt.get(p.id) || 0) + 1);
+      else {
+        const d = Math.floor(s / 2);
+        if (!wdDays.has(p.id)) wdDays.set(p.id, new Set());
+        wdDays.get(p.id).add(d);
+      }
+    }
+  }
+  const m = new Map();
+  for (const id of new Set([...wdDays.keys(), ...weCnt.keys()])) {
+    m.set(id, (wdDays.has(id) ? wdDays.get(id).size : 0) + (weCnt.get(id) || 0) * 2);
+  }
+  return m;
+}
+
 // DOM 헬퍼
 const $ = (id) => document.getElementById(id);
 

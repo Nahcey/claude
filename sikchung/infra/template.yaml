@@ -226,6 +226,23 @@ Resources:
                 - dynamodb:DeleteItem # deleteLatestSchedule
               Resource: !GetAtt SikchungDataTable.Arn
 
+  GenerateScheduleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/
+      Handler: handlers.generate_schedule.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      Timeout: 15
+      MemorySize: 512
+      Events:
+        PostGenerateSchedule:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /schedule/generate
+
   AdminFunction:
     Type: AWS::Serverless::Function
     Properties:

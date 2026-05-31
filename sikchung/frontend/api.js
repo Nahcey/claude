@@ -45,21 +45,22 @@
     return res.json();
   }
 
-  const getMe             = ()          => fetchApi('/me');
-  const putMe             = (d)         => fetchApi('/me',                    { method: 'PUT',    body: JSON.stringify(d) });
-  const getMembers        = ()          => fetchApi('/members');
-  const putMember         = (sub, d)    => fetchApi('/member/' + sub,         { method: 'PUT',    body: JSON.stringify(d) });
-  const getLatestSchedule = ()          => fetchApi('/schedule/latest');
-  const postSchedule      = (wId, sd)   => fetchApi('/schedule',              { method: 'POST',   body: JSON.stringify({ weekId: wId, scheduleData: sd }) });
-  const deleteSchedule    = ()          => fetchApi('/schedule/latest',        { method: 'DELETE' });
-  const postUser          = (d)         => fetchApi('/user',                  { method: 'POST',   body: JSON.stringify(d) });
-  const deleteUser        = (sub)       => fetchApi('/user/' + sub,           { method: 'DELETE' });
-  const putUserRole       = (sub, role) => fetchApi('/user/' + sub + '/role', { method: 'PUT',    body: JSON.stringify({ role }) });
+  const getMe               = ()            => fetchApi('/me');
+  const putMe               = (d)           => fetchApi('/me',                    { method: 'PUT',    body: JSON.stringify(d) });
+  const getMembers          = ()            => fetchApi('/members');
+  const putMember           = (sub, d)      => fetchApi('/member/' + sub,         { method: 'PUT',    body: JSON.stringify(d) });
+  const getLatestSchedule   = ()            => fetchApi('/schedule/latest');
+  const postSchedule        = (wId, sd)     => fetchApi('/schedule',              { method: 'POST',   body: JSON.stringify({ weekId: wId, scheduleData: sd }) });
+  const deleteSchedule      = ()            => fetchApi('/schedule/latest',        { method: 'DELETE' });
+  const generateSchedule    = (eligible)    => fetchApi('/schedule/generate',     { method: 'POST',   body: JSON.stringify({ eligible }) });
+  const postUser            = (d)           => fetchApi('/user',                  { method: 'POST',   body: JSON.stringify(d) });
+  const deleteUser          = (sub)         => fetchApi('/user/' + sub,           { method: 'DELETE' });
+  const putUserRole         = (sub, role)   => fetchApi('/user/' + sub + '/role', { method: 'PUT',    body: JSON.stringify({ role }) });
 
   window.API = {
     getMe, putMe,
     getMembers, putMember,
-    getLatestSchedule, postSchedule, deleteSchedule,
+    getLatestSchedule, postSchedule, deleteSchedule, generateSchedule,
     postUser, deleteUser, putUserRole,
   };
 })();

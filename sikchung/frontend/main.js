@@ -6,10 +6,38 @@ let _currentUser = null; // Permissions.getCurrentUser() 결과 (로그인 시)
 let _apiMode = false;    // true: 서버 연동 모드
 
 // ============================================================
-// 일정 생성 — 순수 계산은 ScheduleAlgo, 결과 렌더는 여기서
+// 일정 생성 — API 서버 연동 (POST /schedule/generate)
 // ============================================================
-function generate() {
-  lastResult = ScheduleAlgo.generateSchedule(people.filter(p => !p.excluded));
+async function generate() {
+  const eligible = people.filter(p => !p.excluded);
+  const raw = await API.generateSchedule(eligible);
+
+  // 서버 응답은 id 기반 → 로컬 people 배열로 person 객체 복원
+  const byId = new Map(people.map(p => [p.id, p]));
+
+  const schedule = raw.schedule.map(slot =>
+    slot.map(id => (id !== null && id !== undefined) ? (byId.get(id) || null) : null)
+  );
+  const skipped = (raw.skipped || [])
+    .map(s => ({ person: byId.get(s.id), reason: s.reason }))
+    .filter(s => s.person);
+  const failed = (raw.failed || [])
+    .map(f => ({ person: byId.get(f.id), reason: f.reason }))
+    .filter(f => f.person);
+  // assignCount: {"str_id": units} → Map(num_id → units)
+  const assignCount = new Map(
+    Object.entries(raw.assignCount || {}).map(([k, v]) => [parseInt(k, 10), v])
+  );
+
+  lastResult = {
+    schedule,
+    skipped,
+    failed,
+    fullDays:    raw.fullDays   || 0,
+    emptySlots:  raw.emptySlots || 0,
+    assignCount,
+    active:      eligible,
+  };
   renderResult(lastResult);
 }
 
@@ -23,8 +51,9 @@ function runGenerate() {
   rBtn.disabled = true; rBtn.textContent = '생성 중…';
   // 두 단계 rAF 후 setTimeout 으로 paint 보장
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    setTimeout(() => {
-      try { generate(); }
+    setTimeout(async () => {
+      try { await generate(); }
+      catch (e) { alert('일정 생성 실패: ' + e.message); }
       finally {
         gBtn.disabled = false; gBtn.textContent = gOriginal;
         rBtn.disabled = false; rBtn.textContent = rOriginal;
@@ -189,7 +218,7 @@ $('resetBtn').addEventListener('click', () => {
 // 헤더 우상단 "updated: YYYY-MM-DD" — 파일이 변경될 때마다 아래 상수를
 // 그 시점 한국 표준시(KST) 날짜로 직접 수정해서 유지한다.
 // ============================================================
-const UPDATED_AT = '2026-05-30'; // KST, HTML 파일 변경 시 함께 갱신
+const UPDATED_AT = '2026-05-31'; // KST, HTML 파일 변경 시 함께 갱신
 (function showUpdated() {
   $('updatedLabel').textContent = `updated: ${UPDATED_AT}`;
 })();
@@ -296,7 +325,7 @@ $('editLatestBtn').addEventListener('click', async () => {
     );
     while (schedule.length < SLOTS_COUNT) schedule.push([null, null]);
 
-    const assignCount = ScheduleAlgo.assignUnitsOf(schedule);
+    const assignCount = assignUnitsOf(schedule);
     lastResult = { schedule, skipped: [], failed: [], fullDays: 0, emptySlots: 0, assignCount, active: people };
 
     editMode = false; selectedSlot = null;
