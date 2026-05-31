@@ -1,0 +1,433 @@
+'use strict';
+// [엔트리/와이어링] 세션 상태 + 이벤트 바인딩 + API 연동 + 부팅.
+// 마지막에 로드. 전역 상태: _currentUser, _apiMode.
+
+let _currentUser = null; // Permissions.getCurrentUser() 결과 (로그인 시)
+let _apiMode = false;    // true: 서버 연동 모드
+
+// ============================================================
+// 일정 생성 — 순수 계산은 ScheduleAlgo, 결과 렌더는 여기서
+// ============================================================
+function generate() {
+  lastResult = ScheduleAlgo.generateSchedule(people.filter(p => !p.excluded));
+  renderResult(lastResult);
+}
+
+// 생성 중 상태 표시 — 버튼 텍스트/disabled + setTimeout 으로 UI 먼저 그리고 무거운 작업 실행
+function runGenerate() {
+  const gBtn = $('generateBtn');
+  const rBtn = $('regenBtn');
+  const gOriginal = gBtn.textContent;
+  const rOriginal = rBtn.textContent;
+  gBtn.disabled = true; gBtn.textContent = '생성 중…';
+  rBtn.disabled = true; rBtn.textContent = '생성 중…';
+  // 두 단계 rAF 후 setTimeout 으로 paint 보장
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    setTimeout(() => {
+      try { generate(); }
+      finally {
+        gBtn.disabled = false; gBtn.textContent = gOriginal;
+        rBtn.disabled = false; rBtn.textContent = rOriginal;
+        if (_apiMode && _currentUser && _currentUser.isLeader && lastResult) {
+          $('saveScheduleRow').style.display = '';
+          $('saveScheduleStatus').textContent = '';
+        }
+      }
+    }, 0);
+  }));
+}
+
+$('generateBtn').addEventListener('click', () => {
+  if (people.length === 0) { alert('인원이 없습니다. 먼저 인원을 추가하세요.'); return; }
+  if (maxCapacity() < TOTAL_SLOTS) {
+    if (!confirm(`최대 ${maxCapacity()}회 배정 가능합니다. 일부 슬롯이 미배정될 수 있는데, 그래도 생성하시겠습니까?`)) return;
+  }
+  runGenerate();
+});
+$('regenBtn').addEventListener('click', () => {
+  // 재생성 시 편집 모드 자동 해제
+  editMode = false; selectedSlot = null;
+  $('editBtn').textContent = '편집';
+  runGenerate();
+});
+$('editBtn').addEventListener('click', toggleEditMode);
+$('backBtn').addEventListener('click', () => {
+  editMode = false; selectedSlot = null;
+  $('editBtn').textContent = '편집';
+  $('result').style.display = 'none';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+// 주 2회 토글 — 즉시 반영
+$('modalDoubleRow').addEventListener('click', () => {
+  const p = editingPerson();
+  if (!p) return;
+  p.double = !p.double;
+  modalDouble.classList.toggle('on', p.double);
+  autoSave();
+});
+
+// 신병 토글 — 즉시 반영
+$('modalRookieRow').addEventListener('click', () => {
+  const p = editingPerson();
+  if (!p) return;
+  p.rookie = !p.rookie;
+  modalRookie.classList.toggle('on', p.rookie);
+  autoSave();
+});
+
+// 우선순위 입력 — 즉시 반영
+modalPriority.addEventListener('input', () => {
+  const p = editingPerson();
+  if (!p) return;
+  let v = parseInt(modalPriority.value, 10);
+  if (isNaN(v) || v < 0) v = 0;
+  if (v > 99) v = 99;
+  p.priority = v;
+  autoSave();
+});
+
+// 일정 제외 토글
+$('modalExcluded').addEventListener('click', () => {
+  const p = editingPerson();
+  if (!p) return;
+  p.excluded = !p.excluded;
+  $('modalExcluded').classList.toggle('on', p.excluded);
+  autoSave();
+});
+
+// 해당 인원 설정만 초기화 (모달은 열린 상태 유지)
+// 우선순위는 디폴트 명단의 위치 기반 값으로 복원, 커스텀 추가 인원은 0
+$('modalReset').addEventListener('click', () => {
+  const p = editingPerson();
+  if (!p) return;
+  if (!confirm('이 인원의 설정(제한 시간 슬롯 · 주 2회 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
+  const defaultIdx = DEFAULT_NAMES.indexOf(p.name);
+  const defaultPriority = defaultIdx >= 0 ? (DEFAULT_NAMES.length - defaultIdx) : 0;
+  p.restricted = defaultRestrictedFor(p.name); // 12칸 배열
+  p.double = false; // index2 디폴트: 주 2회 OFF
+  p.priority = defaultPriority;
+  p.rookie = false;
+  renderModalBody();
+  autoSave();
+});
+
+// 닫기 (X / 푸터 / 배경 / ESC) — 자동 저장이므로 단순히 모달만 닫음
+$('modalClose').addEventListener('click', closeEditor);
+$('modalDone').addEventListener('click', closeEditor);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeEditor();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalOverlay.classList.contains('open')) closeEditor();
+});
+
+// ============================================================
+// 인원 추가 / 초기화
+// ============================================================
+$('addBtn').addEventListener('click', () => {
+  if (_apiMode) {
+    alert('API 모드에서는 인원 추가를 지원하지 않습니다. 관리자 도구에서 추가하세요.');
+    return;
+  }
+  const input = $('newName');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  if (people.some(p => p.name === name)) {
+    alert('이미 같은 이름이 존재합니다.');
+    return;
+  }
+  people.push({
+    id: uid(),
+    name,
+    restricted: defaultRestrictedFor(name), // 12칸 배열
+    double: false, // index2 디폴트: 주 2회 OFF
+    priority: 0,
+    group: DEFAULT_GROUPS[name] || null,
+    rookie: false,
+    excluded: false,
+  });
+  input.value = '';
+  savePeople();
+  renderPeople();
+  updateStatus();
+});
+$('newName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('addBtn').click();
+});
+
+$('resetBtn').addEventListener('click', () => {
+  if (_apiMode) {
+    if (!confirm('인원 설정을 서버에서 다시 불러옵니다. 계속하시겠습니까?')) return;
+    (async () => {
+      try {
+        if (_currentUser && _currentUser.isLeader) {
+          const members = await API.getMembers();
+          people = _mapMembersTopeople(members);
+          nextId = people.length + 1;
+        } else if (_currentUser) {
+          const me = await API.getMe();
+          people = [_mapMeToPersonEntry(me)];
+          nextId = 2;
+        }
+        renderPeople();
+        updateStatus();
+      } catch (e) { alert('서버에서 불러오기 실패: ' + e.message); }
+    })();
+    $('result').style.display = 'none';
+    return;
+  }
+  if (!confirm('인원과 설정을 모두 초기화합니다. 계속하시겠습니까?')) return;
+  initPeople();
+  savePeople();
+  renderPeople();
+  updateStatus();
+  $('result').style.display = 'none';
+});
+
+// ============================================================
+// 헤더 우상단 "updated: YYYY-MM-DD" — 파일이 변경될 때마다 아래 상수를
+// 그 시점 한국 표준시(KST) 날짜로 직접 수정해서 유지한다.
+// ============================================================
+const UPDATED_AT = '2026-05-30'; // KST, HTML 파일 변경 시 함께 갱신
+(function showUpdated() {
+  $('updatedLabel').textContent = `updated: ${UPDATED_AT}`;
+})();
+
+// ============================================================
+// API 연동 헬퍼
+// ============================================================
+function _mapMembersTopeople(members) {
+  return (members || []).map((m, i) => {
+    const p = normalizePerson({ ...m, id: i + 1 });
+    p.sub = m.sub;
+    p.updatedAt = m.updatedAt;
+    return p;
+  });
+}
+
+function _mapMeToPersonEntry(me) {
+  const p = normalizePerson({ ...me, id: 1 });
+  p.sub = _currentUser.sub;
+  p.updatedAt = me.updatedAt;
+  // displayName(한글 이름)을 본인 카드 이름으로 사용 (생성 시점에 박혀있음)
+  if (!p.name) p.name = _currentUser.displayName || _currentUser.username || '';
+  return p;
+}
+
+function showAuthBar(user) {
+  const roleName  = user.isAdmin ? '관리자' : user.isLeader ? '분대장' : '분대원';
+  const roleColor = user.isAdmin ? '#7C3AED' : user.isLeader ? 'var(--primary)' : 'var(--green)';
+  $('userDisplayName').textContent = user.displayName || user.username;
+  $('userRoleBadge').textContent   = roleName;
+  $('userRoleBadge').style.background = roleColor;
+  $('authBar').style.display = 'flex';
+  $('loginBtn').style.display = 'none';
+}
+
+function getISOWeekId(d) {
+  d = d || new Date();
+  const utc = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((utc - yearStart) / 86400000 + 1) / 7);
+  return utc.getUTCFullYear() + '-' + String(weekNo).padStart(2, '0');
+}
+
+// ============================================================
+// 확정 저장 버튼
+// ============================================================
+$('saveScheduleBtn').addEventListener('click', async () => {
+  if (!_apiMode || !_currentUser || !_currentUser.isLeader || !lastResult) return;
+  const weekId = getISOWeekId();
+  const scheduleData = lastResult.schedule.map(slot =>
+    slot.map(p => p ? { sub: p.sub || null, name: p.name } : null)
+  );
+  const btn = $('saveScheduleBtn');
+  const statusEl = $('saveScheduleStatus');
+  btn.disabled = true; btn.textContent = '저장 중…';
+  statusEl.textContent = '';
+  try {
+    await API.postSchedule(weekId, scheduleData);
+    statusEl.textContent = `저장됨 (${weekId})`;
+    statusEl.style.color = 'var(--green)';
+    // 저장 후 최신 일정 카드 갱신
+    try {
+      const latest = await API.getLatestSchedule();
+      if (latest && latest.weekId) {
+        $('latestWeekId').textContent = '(' + latest.weekId + ')'
+          + (latest.generatedAt ? ' · 생성 ' + fmtKST(latest.generatedAt) : '');
+        renderReadOnlySchedule(latest.scheduleData);
+      }
+    } catch (_) {}
+  } catch (e) {
+    statusEl.textContent = '저장 실패: ' + e.message;
+    statusEl.style.color = 'var(--red)';
+  } finally {
+    btn.disabled = false; btn.textContent = '확정 저장';
+  }
+});
+
+// ============================================================
+// 최신 일정 수정 버튼 (분대장/관리자 전용)
+// ============================================================
+$('editLatestBtn').addEventListener('click', async () => {
+  if (!_apiMode || !_currentUser || !_currentUser.isLeader) return;
+  const btn = $('editLatestBtn');
+  btn.disabled = true; btn.textContent = '불러오는 중…';
+  try {
+    const latest = await API.getLatestSchedule();
+    if (!latest || !latest.scheduleData || latest.scheduleData.length === 0) {
+      alert('저장된 일정이 없습니다.');
+      return;
+    }
+    // scheduleData → lastResult.schedule 복원 (people 기준 매칭)
+    const byName = new Map(people.map(p => [p.name, p]));
+    const bySub  = new Map(people.filter(p => p.sub).map(p => [p.sub, p]));
+    let orphanId = -1;
+    const schedule = latest.scheduleData.map(slot =>
+      (slot || []).map(entry => {
+        if (!entry) return null;
+        const matched = (entry.sub && bySub.get(entry.sub)) || byName.get(entry.name);
+        if (matched) return matched;
+        // 명단에 없는 인원: 이름만 유지, 수정 시 제거/교체 가능
+        return { id: orphanId--, name: entry.name, restricted: Array(12).fill(false), double: false, priority: 0, excluded: false };
+      })
+    );
+    while (schedule.length < SLOTS_COUNT) schedule.push([null, null]);
+
+    const assignCount = ScheduleAlgo.assignUnitsOf(schedule);
+    lastResult = { schedule, skipped: [], failed: [], fullDays: 0, emptySlots: 0, assignCount, active: people };
+
+    editMode = false; selectedSlot = null;
+    $('editBtn').textContent = '편집';
+    $('saveScheduleRow').style.display = '';
+    $('saveScheduleStatus').textContent = '';
+    renderResult(lastResult);
+    $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    alert('일정 불러오기 실패: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '수정';
+  }
+});
+
+// ============================================================
+// 최신 일정 삭제 버튼 (분대장/관리자 전용)
+// ============================================================
+$('deleteLatestBtn').addEventListener('click', async () => {
+  if (!_apiMode || !_currentUser || !_currentUser.isLeader) return;
+  if (!confirm('최신 청소 일정을 삭제합니다. 되돌릴 수 없습니다. 계속하시겠습니까?')) return;
+  const btn = $('deleteLatestBtn');
+  btn.disabled = true; btn.textContent = '삭제 중…';
+  try {
+    await API.deleteSchedule();
+    // 최신 일정 영역 초기화
+    $('latestWeekId').textContent = '';
+    $('latestScheduleBody').innerHTML = '';
+    const emptyMsg = $('latestScheduleEmpty');
+    if (emptyMsg) emptyMsg.style.display = '';
+  } catch (e) {
+    alert('삭제 실패: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '삭제';
+  }
+});
+
+// ============================================================
+// 부팅 — 인증 확인 후 역할에 따라 API 또는 localStorage 사용
+// ============================================================
+async function boot() {
+  // OAuth 콜백 처리 (?code= 파라미터)
+  // wasCallback: 콜백 처리 여부 (true면 이미 토큰 교환 시도, 자동 리다이렉트 금지)
+  let wasCallback = false;
+  if (window.Auth) {
+    try { wasCallback = !!(await Auth.handleCallback()); }
+    catch (e) { console.error('[boot] callback error:', e); wasCallback = true; }
+  }
+
+  // 비로그인 상태 처리
+  // 우선순위: ①콜백 중 → ②로그아웃 플래그 있음 → ③첫 방문(자동 리다이렉트)
+  if (!window.Auth || !Auth.isLoggedIn()) {
+    const loggedOutFlag = localStorage.getItem('sikchung_logged_out');
+    console.log('[boot] not logged in | loggedOutFlag:', loggedOutFlag, '| wasCallback:', wasCallback);
+    $('loginBtn').style.display = '';
+    $('loginBtn').addEventListener('click', () => Auth && Auth.login());
+    // 비로그인: 인원 설정·일정 영역 숨김
+    $('peopleSection').style.display = 'none';
+    $('generateSection').style.display = 'none';
+    $('latestScheduleSection').style.display = 'none';
+    $('result').style.display = 'none';
+    const justLoggedOut = localStorage.getItem('sikchung_logged_out');
+    if (justLoggedOut) {
+    } else if (window.Auth) {
+      Auth.login();
+    } else {
+      // 로그아웃 후 or 콜백 실패: 로그인 버튼만 표시 (자동 리다이렉트 없음)
+      // 플래그는 storeTokens()(로그인 성공 시)에서 제거됨
+      console.log('[boot] post-logout or failed callback → show login button only');
+    }
+    return;
+  }
+
+  // 로그인 상태
+  _apiMode = true;
+  _currentUser = Permissions.getCurrentUser();
+  showAuthBar(_currentUser);
+  $('logoutBtn').addEventListener('click', () => {
+    Auth.logout();
+  });
+  $('loginBtn').addEventListener('click', () => Auth.login());
+  $('addRow').style.display = 'none'; // 인원 추가는 관리자 도구에서
+
+  if (_currentUser.isLeader) {
+    // 리더/관리자: 전체 인원 목록 로드
+    try {
+      const members = await API.getMembers();
+      people = _mapMembersTopeople(members);
+      nextId = people.length + 1;
+    } catch (e) {
+      console.error('[boot] getMembers:', e);
+      alert('인원 목록 불러오기 실패: ' + e.message);
+    }
+    renderPeople();
+    updateStatus();
+    // 최신 일정 표시 + 수정/삭제 버튼 노출
+    $('latestScheduleSection').style.display = '';
+    $('editLatestBtn').style.display = '';
+    $('deleteLatestBtn').style.display = '';
+    try {
+      const schedule = await API.getLatestSchedule();
+      if (schedule && schedule.weekId) {
+        $('latestWeekId').textContent = '(' + schedule.weekId + ')'
+          + (schedule.generatedAt ? ' · 생성 ' + fmtKST(schedule.generatedAt) : '');
+        renderReadOnlySchedule(schedule.scheduleData);
+      }
+    } catch (e) { console.error('[boot] getLatestSchedule:', e); }
+  } else {
+    // 일반 멤버: 자기 카드 + 최신 일정
+    $('generateSection').style.display = 'none';
+    $('latestScheduleSection').style.display = '';
+    // 카드 헤딩을 멤버용으로 변경
+    const cardH2 = document.querySelector('.card h2');
+    if (cardH2) { cardH2.innerHTML = '내 설정'; }
+    $('personCount') && ($('personCount').style.display = 'none');
+    try {
+      const me = await API.getMe();
+      people = [_mapMeToPersonEntry(me)];
+      nextId = 2;
+    } catch (e) { console.error('[boot] getMe:', e); }
+    try {
+      const schedule = await API.getLatestSchedule();
+      if (schedule && schedule.weekId) {
+        $('latestWeekId').textContent = '(' + schedule.weekId + ')'
+          + (schedule.generatedAt ? ' · 생성 ' + fmtKST(schedule.generatedAt) : '');
+        renderReadOnlySchedule(schedule.scheduleData);
+      }
+    } catch (e) { console.error('[boot] getLatestSchedule:', e); }
+    renderPeople();
+    updateStatus();
+  }
+}
+
+window.addEventListener("load", boot);
