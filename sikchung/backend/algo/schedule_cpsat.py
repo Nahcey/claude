@@ -88,9 +88,11 @@ def generate_schedule(eligible):
     # ── Hard constraint: unit-based 개인 cap ─────────────────────────────────
     # unit = distinct_weekday_days + 2×weekend_slots  (JS assignUnitsOf 와 동일)
     # non-double cap=2, double cap=4.
-    # 이 제약이 raw-slot cap + weekend-별도-제약을 모두 대체.
+    # raw cap: atomic pair(1 unit, 2 raw) + 추가슬롯 허용을 차단.
+    # unit cap: double 인원의 목저+금저+토저+일저(6 unit) 등 주말 초과를 차단.
     for i, person in enumerate(active):
         cap = 4 if person.get('double') else 2
+        model.Add(sum(x[i][s] for s in range(SLOTS_COUNT)) <= cap)
         model.Add(
             sum(in_wd[i][d] for d in range(WEEKDAY_DAYS)) +
             2 * sum(x[i][s] for s in WEEKEND_SLOTS) <= cap
