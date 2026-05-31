@@ -72,18 +72,29 @@ def generate_schedule(eligible):
             if person['restricted'][s]:
                 model.Add(x[i][s] == 0)
 
-    # ── Hard constraints ──────────────────────────────────────────────────────
+    # ── Hard constraint: slot capacity ────────────────────────────────────────
 
-    # Slot capacity
     for s in range(SLOTS_COUNT):
         model.Add(sum(x[i][s] for i in range(m)) <= SLOTS_PER_DAY)
 
-    # Per-person total cap + weekend cap for non-double
+    # ── in_wd 먼저 정의 (unit-based cap 계산에 필요) ──────────────────────────
+
+    # in_wd[i][d] = OR(morning, evening) for weekday d
+    in_wd = [[model.NewBoolVar(f'inwd{i}_{d}') for d in range(WEEKDAY_DAYS)] for i in range(m)]
+    for i in range(m):
+        for d in range(WEEKDAY_DAYS):
+            model.AddMaxEquality(in_wd[i][d], [x[i][2*d], x[i][2*d+1]])
+
+    # ── Hard constraint: unit-based 개인 cap ─────────────────────────────────
+    # unit = distinct_weekday_days + 2×weekend_slots  (JS assignUnitsOf 와 동일)
+    # non-double cap=2, double cap=4.
+    # 이 제약이 raw-slot cap + weekend-별도-제약을 모두 대체.
     for i, person in enumerate(active):
         cap = 4 if person.get('double') else 2
-        model.Add(sum(x[i][s] for s in range(SLOTS_COUNT)) <= cap)
-        if not person.get('double'):
-            model.Add(sum(x[i][s] for s in WEEKEND_SLOTS) <= 1)
+        model.Add(
+            sum(in_wd[i][d] for d in range(WEEKDAY_DAYS)) +
+            2 * sum(x[i][s] for s in WEEKEND_SLOTS) <= cap
+        )
 
     # ── Derived variables ─────────────────────────────────────────────────────
 
@@ -91,12 +102,6 @@ def generate_schedule(eligible):
     assigned = [model.NewBoolVar(f'asgn{i}') for i in range(m)]
     for i in range(m):
         model.AddMaxEquality(assigned[i], [x[i][s] for s in range(SLOTS_COUNT)])
-
-    # in_wd[i][d] = OR(morning, evening) for weekday d
-    in_wd = [[model.NewBoolVar(f'inwd{i}_{d}') for d in range(WEEKDAY_DAYS)] for i in range(m)]
-    for i in range(m):
-        for d in range(WEEKDAY_DAYS):
-            model.AddMaxEquality(in_wd[i][d], [x[i][2*d], x[i][2*d+1]])
 
     # atomic[i][d] = AND(morning, evening) = min
     atomic = [[model.NewBoolVar(f'atom{i}_{d}') for d in range(WEEKDAY_DAYS)] for i in range(m)]
@@ -109,11 +114,12 @@ def generate_schedule(eligible):
     for i in range(m):
         model.AddMaxEquality(has_wk[i], [x[i][s] for s in WEEKEND_SLOTS])
 
-    # unit_v[i] = distinct_weekday_days + weekend_slots
-    unit_v = [model.NewIntVar(0, WEEKDAY_DAYS + len(WEEKEND_SLOTS), f'unit{i}') for i in range(m)]
+    # unit_v[i] = distinct_weekday_days + 2×weekend_slots  (max = 5 + 2×2 = 9)
+    unit_v = [model.NewIntVar(0, WEEKDAY_DAYS + 2 * len(WEEKEND_SLOTS), f'unit{i}')
+              for i in range(m)]
     for i in range(m):
         model.Add(unit_v[i] == sum(in_wd[i][d] for d in range(WEEKDAY_DAYS))
-                              + sum(x[i][s] for s in WEEKEND_SLOTS))
+                              + 2 * sum(x[i][s] for s in WEEKEND_SLOTS))
 
     # is_dbl[i] = unit_v[i] >= 2
     is_dbl = [model.NewBoolVar(f'isdbl{i}') for i in range(m)]
