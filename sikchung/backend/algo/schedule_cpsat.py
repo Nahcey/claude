@@ -77,28 +77,24 @@ def generate_schedule(eligible):
     for s in range(SLOTS_COUNT):
         model.Add(sum(x[i][s] for i in range(m)) <= SLOTS_PER_DAY)
 
-    # ── in_wd 먼저 정의 (unit-based cap 계산에 필요) ──────────────────────────
+    # ── Hard constraint: per-person cap ──────────────────────────────────────
+    # 평일 슬롯 각 1비용, 주말 슬롯 각 2비용 → 총 비용 ≤ cap.
+    # sum(all_slots) + sum(weekend_slots) = raw_wd + 2×wknd ≤ cap.
+    # non-double cap=2, double cap=4.
+    for i, person in enumerate(active):
+        cap = 4 if person.get('double') else 2
+        model.Add(
+            sum(x[i][s] for s in range(SLOTS_COUNT)) +
+            sum(x[i][s] for s in WEEKEND_SLOTS) <= cap
+        )
+
+    # ── Derived variables ─────────────────────────────────────────────────────
 
     # in_wd[i][d] = OR(morning, evening) for weekday d
     in_wd = [[model.NewBoolVar(f'inwd{i}_{d}') for d in range(WEEKDAY_DAYS)] for i in range(m)]
     for i in range(m):
         for d in range(WEEKDAY_DAYS):
             model.AddMaxEquality(in_wd[i][d], [x[i][2*d], x[i][2*d+1]])
-
-    # ── Hard constraint: unit-based 개인 cap ─────────────────────────────────
-    # unit = distinct_weekday_days + 2×weekend_slots  (JS assignUnitsOf 와 동일)
-    # non-double cap=2, double cap=4.
-    # raw cap: atomic pair(1 unit, 2 raw) + 추가슬롯 허용을 차단.
-    # unit cap: double 인원의 목저+금저+토저+일저(6 unit) 등 주말 초과를 차단.
-    for i, person in enumerate(active):
-        cap = 4 if person.get('double') else 2
-        model.Add(sum(x[i][s] for s in range(SLOTS_COUNT)) <= cap)
-        model.Add(
-            sum(in_wd[i][d] for d in range(WEEKDAY_DAYS)) +
-            2 * sum(x[i][s] for s in WEEKEND_SLOTS) <= cap
-        )
-
-    # ── Derived variables ─────────────────────────────────────────────────────
 
     # assigned[i] = OR over all slots
     assigned = [model.NewBoolVar(f'asgn{i}') for i in range(m)]
