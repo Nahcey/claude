@@ -197,15 +197,15 @@ def generate_schedule(eligible):
         return _empty_result(optimal=False)
     model.Add(excess_v <= v1)
 
-    # Stage 2: minimize double-assigned count  [5s]
-    v2 = solve_stage('min', double_total_v, 5.0)
+    # Stage 2: maximize filled slots  [5s]
+    v2 = solve_stage('max', filled_v, 5.0)
     if v2 is not None:
-        model.Add(double_total_v <= v2)
+        model.Add(filled_v >= v2)
 
-    # Stage 3: maximize filled slots  [4s]
-    v3 = solve_stage('max', filled_v, 4.0)
+    # Stage 3: minimize double-assigned count  [4s]
+    v3 = solve_stage('min', double_total_v, 4.0)
     if v3 is not None:
-        model.Add(filled_v >= v3)
+        model.Add(double_total_v <= v3)
 
     # Stage 4: maximize atomic (both morning+evening same day) count  [4s]
     v4 = solve_stage('max', atomic_total_v, 4.0)
