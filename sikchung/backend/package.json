@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Sikchung cleaning schedule - Lambda backend",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.600.0",

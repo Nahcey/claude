@@ -4,7 +4,7 @@ Description: Sikchung cleaning schedule - AWS backend + frontend hosting (S3 + C
 
 Globals:
   Function:
-    Runtime: nodejs20.x
+    Runtime: nodejs22.x
     Timeout: 10
     MemorySize: 128
     Environment:

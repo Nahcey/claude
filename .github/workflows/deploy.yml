@@ -25,11 +25,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Node.js 20 ──────────────────────────────────────────────────────
+      # ── 2. Node.js 22 ──────────────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: sikchung/backend/package-lock.json
 
