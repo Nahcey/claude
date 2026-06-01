@@ -97,6 +97,34 @@ async function deleteMember(sub) {
   }));
 }
 
+// ── AUDIT ──────────────────────────────────────────────────────────────────────
+
+/**
+ * 감사 로그를 최신순으로 조회한다.
+ * SK가 'timestamp#random' 구조라 그 자체가 정렬키이자 커서로 동작한다 →
+ * before(직전 페이지 마지막 SK)보다 작은 SK만 가져오면 자연스러운 페이지네이션.
+ * (LastEvaluatedKey 복합객체 대신 단일 문자열 커서를 쓰는 이유)
+ * @param {object}  [opts]
+ * @param {number}  [opts.limit=50]   한 페이지 크기
+ * @param {?string} [opts.before]     이 SK보다 과거(작은) 항목만. 없으면 첫 페이지.
+ * @returns {{ items: object[], nextCursor: (string|null) }}
+ */
+async function listAuditLogs({ limit = 50, before = null } = {}) {
+  const { Items } = await client.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    KeyConditionExpression: before ? 'PK = :pk AND SK < :before' : 'PK = :pk',
+    ExpressionAttributeValues: before
+      ? { ':pk': 'AUDIT', ':before': before }
+      : { ':pk': 'AUDIT' },
+    ScanIndexForward: false,   // 최신 먼저
+    Limit: limit,
+  }));
+  const items = Items ?? [];
+  // 가득 찬 페이지면 다음 커서 제공, 아니면 끝
+  const nextCursor = items.length === limit ? items[items.length - 1].SK : null;
+  return { items, nextCursor };
+}
+
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
 
 /**
@@ -143,6 +171,7 @@ module.exports = {
   updateMember,
   listMembers,
   deleteMember,
+  listAuditLogs,
   putSchedule,
   getLatestSchedule,
   deleteLatestSchedule,
