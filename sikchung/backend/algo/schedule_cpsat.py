@@ -189,12 +189,6 @@ def generate_schedule(eligible):
                  sum(x[i][s] for s in WEEKEND_SLOTS))
         model.Add(raw_u >= min_raw_unit_v).OnlyEnforceIf(assigned[i])
 
-    # 균등 배분 + atomic 동시 최적화용 합성 변수
-    # SCALE > max(atomic_total_v) 이므로 min_raw_unit_v 가 항상 우선 지배
-    _scale        = m * WEEKDAY_DAYS + 1
-    fair_atomic_v = model.NewIntVar(0, 4 * _scale + m * WEEKDAY_DAYS, 'fair_atom_v')
-    model.Add(fair_atomic_v == min_raw_unit_v * _scale + atomic_total_v)
-
     pref_terms = []
     for i in range(m):
         for j in range(i + 1, m):
@@ -247,28 +241,31 @@ def generate_schedule(eligible):
     if v3 is not None:
         model.Add(non_dbl_dbl_v <= v3)
 
-    # Stage 4: 균등 배분 + atomic 묶기 동시 최적화  [4s]
-    # fair_atomic_v = min_raw_unit_v * SCALE + atomic_total_v
-    # → min_raw_unit_v 가 우선 지배, 동점 시 atomic 최대화
-    v4 = solve_stage('max', fair_atomic_v, 4.0)
+    # Stage 4: 배정 인원 간 최소 raw unit 최대화 (균등 배분)  [3s]
+    v4 = solve_stage('max', min_raw_unit_v, 3.0)
     if v4 is not None:
-        model.Add(fair_atomic_v >= v4)
+        model.Add(min_raw_unit_v >= v4)
 
-    # Stage 5: 2회 배정 인원 평일+주말 조합 최대화  [2s]
-    v5 = solve_stage('max', mix_total_v, 2.0)
+    # Stage 5: maximize atomic (both morning+evening same day) count  [2s]
+    v5 = solve_stage('max', atomic_total_v, 2.0)
     if v5 is not None:
-        model.Add(mix_total_v >= v5)
+        model.Add(atomic_total_v >= v5)
 
-    # Stage 6: 2회 배정 인원 평일+평일 조합 최대화 (= 주말+주말 최소화)  [2s]
-    v6 = solve_stage('max', wd_only_total_v, 2.0)
+    # Stage 6: 2회 배정 인원 평일+주말 조합 최대화  [2s]
+    v6 = solve_stage('max', mix_total_v, 2.0)
     if v6 is not None:
-        model.Add(wd_only_total_v >= v6)
+        model.Add(mix_total_v >= v6)
 
-    # Stage 7: maximize pair preference  [1s]
-    v7 = solve_stage('max', pref_v, 1.0)
+    # Stage 7: 2회 배정 인원 평일+평일 조합 최대화 (= 주말+주말 최소화)  [1s]
+    v7 = solve_stage('max', wd_only_total_v, 1.0)
+    if v7 is not None:
+        model.Add(wd_only_total_v >= v7)
 
-    # If stage 7 found nothing (edge case), ensure solver has a valid solution
-    if v7 is None:
+    # Stage 8: maximize pair preference  [1s]
+    v8 = solve_stage('max', pref_v, 1.0)
+
+    # If stage 8 found nothing (edge case), ensure solver has a valid solution
+    if v8 is None:
         model.Minimize(model.NewConstant(0))
         solver.parameters.max_time_in_seconds = 2.0
         status = solver.Solve(model)
