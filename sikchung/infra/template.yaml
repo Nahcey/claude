@@ -119,7 +119,7 @@ Resources:
       StageName: prod
       CorsConfiguration:
         AllowOrigins:
-          - "*"                      # 5단계에서 CloudFront 도메인으로 제한
+          - !Sub "https://${CloudFrontDistribution.DomainName}"
         AllowMethods:
           - GET
           - POST

@@ -1,12 +1,7 @@
 'use strict';
 
-// TODO(5단계): AllowOrigin을 CloudFront 배포 도메인으로 제한
-//              예: 'https://d1234abcd.cloudfront.net'
 const HEADERS = {
   'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };
 
 const res = (statusCode, body) => ({
