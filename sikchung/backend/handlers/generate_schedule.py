@@ -8,6 +8,7 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from lib.auth import authorize
+from lib.audit import write_audit
 from algo.schedule_cpsat import generate_schedule
 
 _HEADERS = {'Content-Type': 'application/json'}
@@ -68,6 +69,13 @@ def handler(event, context):
 
     # assignCount: {int_id: units} → {"str_id": units} (JSON keys must be strings)
     assign_count = {str(k): v for k, v in result['assign_count'].items()}
+
+    # 감사 로그: 동기 호출이지만 write_audit 내부에서 예외를 삼켜 본 응답을 막지 않음
+    write_audit(event, auth, 'SCHEDULE_GENERATE', {
+        'optimal':      result.get('optimal', False),
+        'skippedCount': len(result['skipped']),
+        'assignCount':  assign_count,
+    })
 
     return _resp(200, {
         'schedule':    schedule_ids,

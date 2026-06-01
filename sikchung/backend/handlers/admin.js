@@ -20,6 +20,7 @@ const { getMember, putMember, deleteMember }          = require('../lib/db');
 const {
   ok, created, badRequest, unauthorized, forbidden, notFound, conflict, serverError,
 } = require('../lib/response');
+const { writeAudit }                                  = require('../lib/audit');
 
 const USER_POOL_ID    = process.env.USER_POOL_ID;
 const CHANGEABLE_ROLES = ['leader', 'member'];
@@ -94,6 +95,7 @@ exports.handler = async (event) => {
         excluded: false,
       });
 
+      writeAudit(event, auth, 'USER_CREATE', { targetSub: createdSub, username: cognitoUsername, role });   // fire-and-forget
       return created({ sub: createdSub, username: cognitoUsername, role });
     }
 
@@ -117,6 +119,7 @@ exports.handler = async (event) => {
       }
 
       await deleteMember(sub);
+      writeAudit(event, auth, 'USER_DELETE', { targetSub: sub, username: cognitoUsername });   // fire-and-forget
       return ok({ deleted: true, sub });
     }
 
@@ -160,6 +163,7 @@ exports.handler = async (event) => {
         GroupName: newRole,
       }));
 
+      writeAudit(event, auth, 'USER_ROLE_CHANGE', { targetSub: sub, newRole });   // fire-and-forget
       return ok({ sub, role: newRole });
     }
 

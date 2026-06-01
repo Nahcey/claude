@@ -8,6 +8,7 @@ const { authorize }                                  = require('../lib/auth');
 const { getMember, updateMember, listMembers }       = require('../lib/db');
 const { ok, badRequest, notFound, unauthorized, forbidden, serverError } = require('../lib/response');
 const { validateRestricted }                         = require('../lib/validate');
+const { writeAudit }                                 = require('../lib/audit');
 
 exports.handler = async (event) => {
   try {
@@ -77,6 +78,7 @@ exports.handler = async (event) => {
 
       const saved = await updateMember(sub, update);
       const { PK, SK, ...result } = saved;
+      writeAudit(event, auth, 'MEMBER_UPDATE', { targetSub: sub, changedFields: Object.keys(update) });   // fire-and-forget
       return ok({ sub, ...result });
     }
 

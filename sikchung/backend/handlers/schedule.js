@@ -7,6 +7,7 @@
 const { authorize }                                          = require('../lib/auth');
 const { putSchedule, getLatestSchedule, deleteLatestSchedule } = require('../lib/db');
 const { ok, badRequest, unauthorized, forbidden, serverError } = require('../lib/response');
+const { writeAudit }                                         = require('../lib/audit');
 
 const WEEK_ID_RE = /^\d{4}-\d{2}$/;
 
@@ -41,6 +42,7 @@ exports.handler = async (event) => {
         generatedByEmail: email,
       });
       const { PK, SK, ...result } = saved;
+      writeAudit(event, auth, 'SCHEDULE_SAVE', { weekId: SK });   // fire-and-forget
       return ok({ weekId: SK, ...result });
     }
 
@@ -66,6 +68,7 @@ exports.handler = async (event) => {
       }
       const deletedWeekId = await deleteLatestSchedule();
       if (!deletedWeekId) return ok({ deleted: false, message: '삭제할 일정이 없습니다.' });
+      writeAudit(event, auth, 'SCHEDULE_DELETE', { weekId: deletedWeekId });   // fire-and-forget
       return ok({ deleted: true, weekId: deletedWeekId });
     }
 
