@@ -2,6 +2,7 @@
 CP-SAT 기반 청소 일정 생성기.
 6단계 축차 최적화 (총 시간 예산 24초).
 """
+import json
 import os
 import random
 import sys
@@ -19,6 +20,9 @@ TOTAL_SLOTS   = SLOTS_COUNT * SLOTS_PER_DAY
 WEEKDAY_DAYS  = 5
 WEEKEND_SLOTS = [10, 11]
 
+# CP-SAT 상태 코드 → 이름 (진단 출력용)
+_CP_STATUS = {OPTIMAL: 'OPTIMAL', FEASIBLE: 'FEASIBLE'}
+
 
 def _pair_preference(a, b):
     a_r = bool(a.get('rookie'))
@@ -32,6 +36,9 @@ def _pair_preference(a, b):
 
 
 def generate_schedule(eligible):
+    # ── [진단] 입력 덤프 ──────────────────────────────────────────────────────
+    print(f'[input] {json.dumps(eligible, ensure_ascii=False)}', file=sys.stderr)
+
     skip_result = apply_skip_priority(eligible)
     active  = skip_result['active']
     skipped = skip_result['skipped']
@@ -219,38 +226,46 @@ def generate_schedule(eligible):
 
     # ── Sequential optimization ───────────────────────────────────────────────
 
-    stages_ok = []
+    stages_ok      = []   # feasibility 판정 (흐름 제어용, OPTIMAL|FEASIBLE 모두 True)
+    stages_optimal = []   # OPTIMAL 여부만 기록 (최종 optimal 플래그용)
 
-    def solve_stage(sense, obj_var, time_s):
+    def solve_stage(sense, obj_var, time_s, label=''):
         if sense == 'min':
             model.Minimize(obj_var)
         else:
             model.Maximize(obj_var)
         solver.parameters.max_time_in_seconds = time_s
         status = solver.Solve(model)
-        stages_ok.append(status in (OPTIMAL, FEASIBLE))
-        if status in (OPTIMAL, FEASIBLE):
+        ok = status in (OPTIMAL, FEASIBLE)
+        stages_ok.append(ok)
+        stages_optimal.append(status == OPTIMAL)
+        status_name = _CP_STATUS.get(status, str(status))
+        obj_str = str(round(solver.ObjectiveValue())) if ok else 'N/A'
+        tag = f'[stage {label}]' if label else '[stage]'
+        print(f'{tag} status={status_name} obj={obj_str} wall={solver.WallTime():.3f}s',
+              file=sys.stderr)
+        if ok:
             return round(solver.ObjectiveValue())
         return None
 
     # Stage 1: minimize excess unassigned  [8s]
-    v1 = solve_stage('min', excess_v, 8.0)
+    v1 = solve_stage('min', excess_v, 8.0, label='excess')
     if v1 is None:
         return _empty_result(optimal=False)
     model.Add(excess_v <= v1)
 
     # Stage 2: maximize filled slots  [5s]
-    v2 = solve_stage('max', filled_v, 5.0)
+    v2 = solve_stage('max', filled_v, 5.0, label='filled')
     if v2 is not None:
         model.Add(filled_v >= v2)
 
     # Stage 3: double=false 인원의 이중 배정 최소화  [2s]
-    v3 = solve_stage('min', non_dbl_dbl_v, 2.0)
+    v3 = solve_stage('min', non_dbl_dbl_v, 2.0, label='non_dbl_dbl')
     if v3 is not None:
         model.Add(non_dbl_dbl_v <= v3)
 
     # Stage 4: 배정 인원 간 최소 raw unit 최대화 (균등 배분)  [3s]
-    v4 = solve_stage('max', min_raw_unit_v, 3.0)
+    v4 = solve_stage('max', min_raw_unit_v, 3.0, label='min_raw_unit')
     if v4 is not None:
         model.Add(min_raw_unit_v >= v4)
         # 이후 단계에서 하한이 해제되지 않도록 per-person 명시 하한 추가
@@ -259,22 +274,22 @@ def generate_schedule(eligible):
                 model.Add(raw_unit_v[i] + 4 >= v4 + 4 * assigned[i])
 
     # Stage 5: maximize atomic (both morning+evening same day) count  [2s]
-    v5 = solve_stage('max', atomic_total_v, 2.0)
+    v5 = solve_stage('max', atomic_total_v, 2.0, label='atomic')
     if v5 is not None:
         model.Add(atomic_total_v >= v5)
 
     # Stage 6: 2회 배정 인원 평일+주말 조합 최대화  [2s]
-    v6 = solve_stage('max', mix_total_v, 2.0)
+    v6 = solve_stage('max', mix_total_v, 2.0, label='mix')
     if v6 is not None:
         model.Add(mix_total_v >= v6)
 
     # Stage 7: 2회 배정 인원 평일+평일 조합 최대화 (= 주말+주말 최소화)  [1s]
-    v7 = solve_stage('max', wd_only_total_v, 1.0)
+    v7 = solve_stage('max', wd_only_total_v, 1.0, label='wd_only')
     if v7 is not None:
         model.Add(wd_only_total_v >= v7)
 
     # Stage 8: maximize pair preference  [1s]
-    v8 = solve_stage('max', pref_v, 1.0)
+    v8 = solve_stage('max', pref_v, 1.0, label='pref')
 
     # If stage 8 found nothing (edge case), ensure solver has a valid solution
     if v8 is None:
@@ -319,5 +334,93 @@ def generate_schedule(eligible):
         'empty_slots':  empty_slots,
         'assign_count': assign_units_of(result_schedule),
         'active':       active,
-        'optimal':      all(stages_ok),
+        'optimal':      all(stages_optimal),   # OPTIMAL 상태에서만 True
     }
+
+
+def check_expected(eligible, expected_assignment):
+    """expected_assignment가 hard constraint를 충족하는지 검사한다.
+
+    generate_schedule과 독립된 경량 함수. 시간예산 1초.
+
+    Args:
+        eligible:            generate_schedule에 전달하는 것과 동일한 eligible 배열.
+        expected_assignment: {slot_index: [id, ...]} (int 키, id 최대 SLOTS_PER_DAY 개).
+    Returns:
+        {'feasible': bool, 'wall': float}
+    """
+    skip_result = apply_skip_priority(eligible)
+    active = skip_result['active']
+    m = len(active)
+
+    if m == 0:
+        return {'feasible': True, 'wall': 0.0}
+
+    id_to_idx = {active[i]['id']: i for i in range(m)}
+
+    model  = CpModel()
+    solver = CpSolver()
+    solver.parameters.max_time_in_seconds = 1.0
+
+    x = [[model.NewBoolVar(f'x{i}_{s}') for s in range(SLOTS_COUNT)] for i in range(m)]
+
+    # hard: restricted
+    for i, person in enumerate(active):
+        for s in range(SLOTS_COUNT):
+            if person['restricted'][s]:
+                model.Add(x[i][s] == 0)
+
+    # hard: slot capacity
+    for s in range(SLOTS_COUNT):
+        model.Add(sum(x[i][s] for i in range(m)) <= SLOTS_PER_DAY)
+
+    # hard: per-person cap
+    for i, person in enumerate(active):
+        cap = 4 if person.get('double') else 2
+        model.Add(
+            sum(x[i][s] for s in range(SLOTS_COUNT)) +
+            sum(x[i][s] for s in WEEKEND_SLOTS) <= cap
+        )
+
+    # fix expected assignment: x[i][s] == 1 if assigned, 0 otherwise
+    assigned_pairs = set()
+    for s_key, ids in expected_assignment.items():
+        s = int(s_key)
+        for pid in (ids or []):
+            if pid in id_to_idx:
+                assigned_pairs.add((id_to_idx[pid], s))
+
+    for i in range(m):
+        for s in range(SLOTS_COUNT):
+            model.Add(x[i][s] == (1 if (i, s) in assigned_pairs else 0))
+
+    status = solver.Solve(model)
+    return {
+        'feasible': status in (OPTIMAL, FEASIBLE),
+        'wall':     solver.WallTime(),
+    }
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print('Usage: python schedule_cpsat.py <eligible.json>', file=sys.stderr)
+        sys.exit(1)
+
+    with open(sys.argv[1], encoding='utf-8') as f:
+        _eligible = json.load(f)
+
+    _result = generate_schedule(_eligible)
+
+    _SLOT_LABELS = [
+        '월아', '월저', '화아', '화저', '수아', '수저',
+        '목아', '목저', '금아', '금저', '토',  '일',
+    ]
+    print('\n[schedule]', file=sys.stderr)
+    for _s in range(SLOTS_COUNT):
+        _slot = _result['schedule'][_s]
+        _names = [f"{p['name']}({p['id']})" if p else '—' for p in _slot]
+        _lbl = _SLOT_LABELS[_s] if _s < len(_SLOT_LABELS) else str(_s)
+        print(f'  slot {_s:2d} [{_lbl}]: {", ".join(_names)}', file=sys.stderr)
+
+    print(f'\n[assign_count] {_result["assign_count"]}', file=sys.stderr)
+    print(f'[optimal]      {_result["optimal"]}', file=sys.stderr)
