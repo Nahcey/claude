@@ -447,7 +447,7 @@ async function boot() {
       }
     } catch (e) { console.error('[boot] getLatestSchedule:', e); }
 
-    // 감사 로그 섹션은 admin 에게만 노출
+    // 로그 섹션은 admin 에게만 노출
     if (_currentUser.isAdmin) {
       $('auditSection').style.display = '';
     }
@@ -478,7 +478,7 @@ async function boot() {
 }
 
 // ============================================================
-// 감사 로그 (admin 전용)
+// 로그 (admin 전용)
 // ============================================================
 const AUDIT_ACTION_LABELS = {
   SCHEDULE_GENERATE: '일정 생성',
