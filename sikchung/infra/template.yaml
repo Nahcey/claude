@@ -246,6 +246,12 @@ Resources:
             ApiId: !Ref HttpApi
             Method: POST
             Path: /schedule/generate
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem   # writeAudit (SCHEDULE_GENERATE)
+              Resource: !GetAtt SikchungDataTable.Arn
     Metadata:
       Dockerfile: Dockerfile
       DockerContext: ../backend
@@ -295,6 +301,26 @@ Resources:
                 - cognito-idp:AdminListGroupsForUser
                 - cognito-idp:ListUsers
               Resource: !GetAtt UserPool.Arn
+
+  AuditLogFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: nodejs22.x
+      CodeUri: ../backend/
+      Handler: handlers/auditLog.handler
+      Events:
+        GetAudit:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /audit
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query   # listAuditLogs (조회 전용)
+              Resource: !GetAtt SikchungDataTable.Arn
 
   PostConfirmationFunction:
     Type: AWS::Serverless::Function
