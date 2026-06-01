@@ -163,6 +163,26 @@
       </div>
     </div>
   </div>
+
+  <!-- 감사 로그 (admin 전용) -->
+  <div id="auditSection" style="display:none;" class="card">
+    <h2 style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">감사 로그
+      <button class="btn btn-secondary" id="auditLoadBtn" style="font-size:12px; padding:3px 10px; margin-left:auto;">불러오기</button>
+    </h2>
+    <div class="table-wrap">
+      <table class="schedule">
+        <thead>
+          <tr><th>시간</th><th>액션</th><th>수행자</th><th>대상</th><th>상세</th></tr>
+        </thead>
+        <tbody id="auditBody"></tbody>
+      </table>
+    </div>
+    <p id="auditEmpty" style="color:var(--muted); font-size:13px; margin-top:8px; display:none;">기록이 없습니다.</p>
+    <div style="margin-top:10px;">
+      <button class="btn btn-secondary" id="auditMoreBtn" style="display:none; font-size:12px; padding:3px 12px;">더 보기</button>
+      <span id="auditStatus" style="font-size:12px; color:var(--muted); margin-left:8px;"></span>
+    </div>
+  </div>
 </div>
 
 

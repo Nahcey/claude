@@ -446,6 +446,11 @@ async function boot() {
         renderReadOnlySchedule(schedule.scheduleData);
       }
     } catch (e) { console.error('[boot] getLatestSchedule:', e); }
+
+    // 감사 로그 섹션은 admin 에게만 노출
+    if (_currentUser.isAdmin) {
+      $('auditSection').style.display = '';
+    }
   } else {
     // 일반 멤버: 자기 카드 + 최신 일정
     $('generateSection').style.display = 'none';
@@ -471,5 +476,91 @@ async function boot() {
     updateStatus();
   }
 }
+
+// ============================================================
+// 감사 로그 (admin 전용)
+// ============================================================
+const AUDIT_ACTION_LABELS = {
+  SCHEDULE_GENERATE: '일정 생성',
+  SCHEDULE_SAVE:     '일정 저장',
+  SCHEDULE_DELETE:   '일정 삭제',
+  MEMBER_UPDATE:     '멤버 수정',
+  ME_UPDATE:         '본인 수정',
+  USER_CREATE:       '사용자 생성',
+  USER_DELETE:       '사용자 삭제',
+  USER_ROLE_CHANGE:  '역할 변경',
+};
+
+let _auditCursor = null;
+
+// sub 뒤 8자리 단축 표시 (sub→name 매핑은 현재 없음)
+function shortSub(sub) {
+  if (!sub) return '—';
+  return sub.length > 8 ? '…' + sub.slice(-8) : sub;
+}
+
+// detail 객체를 한 줄 요약 문자열로 (대용량 필드는 개수로 축약)
+function summarizeAuditDetail(detail) {
+  if (!detail || typeof detail !== 'object') return '';
+  const parts = [];
+  if (detail.weekId)       parts.push('주차 ' + detail.weekId);
+  if (detail.username)     parts.push(detail.username);
+  if (detail.role)         parts.push('역할 ' + detail.role);
+  if (detail.newRole)      parts.push('→ ' + detail.newRole);
+  if (detail.optimal !== undefined) parts.push(detail.optimal ? '최적' : '비최적');
+  if (detail.skippedCount !== undefined) parts.push('미배정 ' + detail.skippedCount);
+  if (Array.isArray(detail.changedFields)) parts.push('변경: ' + detail.changedFields.join(', '));
+  return parts.join(' · ');
+}
+
+function appendAuditRows(items) {
+  const tbody = $('auditBody');
+  for (const it of items) {
+    const tr = document.createElement('tr');
+    const cells = [
+      fmtKST(it.timestamp),
+      AUDIT_ACTION_LABELS[it.action] || it.action,
+      shortSub(it.actorSub) + (it.actorRole ? ' (' + it.actorRole + ')' : ''),
+      it.targetSub ? shortSub(it.targetSub) : '—',
+      summarizeAuditDetail(it.detail),
+    ];
+    for (const text of cells) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      td.style.fontSize = '12px';
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadAuditLogs(reset) {
+  const btnLoad = $('auditLoadBtn');
+  const btnMore = $('auditMoreBtn');
+  const statusEl = $('auditStatus');
+  if (reset) {
+    $('auditBody').innerHTML = '';
+    _auditCursor = null;
+  }
+  btnLoad.disabled = true; btnMore.disabled = true;
+  statusEl.textContent = '불러오는 중…';
+  try {
+    const { items, nextCursor } = await API.getAuditLogs(50, _auditCursor);
+    appendAuditRows(items || []);
+    _auditCursor = nextCursor;
+    $('auditMoreBtn').style.display = nextCursor ? '' : 'none';
+    const empty = ($('auditBody').children.length === 0);
+    $('auditEmpty').style.display = empty ? '' : 'none';
+    statusEl.textContent = '';
+  } catch (e) {
+    statusEl.textContent = '불러오기 실패: ' + e.message;
+    statusEl.style.color = 'var(--red)';
+  } finally {
+    btnLoad.disabled = false; btnMore.disabled = false;
+  }
+}
+
+$('auditLoadBtn').addEventListener('click', () => loadAuditLogs(true));
+$('auditMoreBtn').addEventListener('click', () => loadAuditLogs(false));
 
 window.addEventListener("load", boot);

@@ -56,11 +56,19 @@
   const postUser            = (d)           => fetchApi('/user',                  { method: 'POST',   body: JSON.stringify(d) });
   const deleteUser          = (sub)         => fetchApi('/user/' + sub,           { method: 'DELETE' });
   const putUserRole         = (sub, role)   => fetchApi('/user/' + sub + '/role', { method: 'PUT',    body: JSON.stringify({ role }) });
+  const getAuditLogs        = (limit, cursor) => {
+    const p = new URLSearchParams();
+    if (limit)  p.set('limit', limit);
+    if (cursor) p.set('cursor', cursor);
+    const qs = p.toString();
+    return fetchApi('/audit' + (qs ? '?' + qs : ''));
+  };
 
   window.API = {
     getMe, putMe,
     getMembers, putMember,
     getLatestSchedule, postSchedule, deleteSchedule, generateSchedule,
     postUser, deleteUser, putUserRole,
+    getAuditLogs,
   };
 })();
