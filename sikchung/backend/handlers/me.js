@@ -5,7 +5,7 @@
 //   priority: leader/admin만 수정 가능, member는 조용히 무시
 
 const { authorize }                                  = require('../lib/auth');
-const { getMember, putMember }                       = require('../lib/db');
+const { getMember, putMember, updateMember }          = require('../lib/db');
 const { ok, badRequest, unauthorized, forbidden, serverError } = require('../lib/response');
 const { validateRestricted }                         = require('../lib/validate');
 
@@ -66,8 +66,10 @@ exports.handler = async (event) => {
         update.rookie = body.rookie;
       }
 
-      const existing = (await getMember(userSub)) ?? {};
-      const saved    = await putMember(userSub, { ...existing, ...update });
+      const existing = await getMember(userSub);
+      const saved = existing
+        ? await updateMember(userSub, update)
+        : await putMember(userSub, update);
       const { PK, SK, ...result } = saved;
       return ok(result);
     }

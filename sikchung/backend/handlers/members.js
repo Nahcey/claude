@@ -5,7 +5,7 @@
 // leader/admin이므로 priority 수정도 허용
 
 const { authorize }                                  = require('../lib/auth');
-const { getMember, putMember, listMembers }          = require('../lib/db');
+const { getMember, updateMember, listMembers }       = require('../lib/db');
 const { ok, badRequest, notFound, unauthorized, forbidden, serverError } = require('../lib/response');
 const { validateRestricted }                         = require('../lib/validate');
 
@@ -75,7 +75,7 @@ exports.handler = async (event) => {
       const existing = await getMember(sub);
       if (!existing) return notFound('Member not found');
 
-      const saved = await putMember(sub, { ...existing, ...update });
+      const saved = await updateMember(sub, update);
       const { PK, SK, ...result } = saved;
       return ok({ sub, ...result });
     }

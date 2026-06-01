@@ -5,6 +5,7 @@ const {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
+  UpdateCommand,
   DeleteCommand,
   QueryCommand,
 } = require('@aws-sdk/lib-dynamodb');
@@ -39,6 +40,44 @@ async function putMember(sub, data) {
   };
   await client.send(new PutCommand({ TableName: TABLE_NAME, Item: item }));
   return item;
+}
+
+/**
+ * 지정된 필드만 원자적으로 업데이트한다. updatedAt은 자동 세팅.
+ * PK/SK는 절대 업데이트 대상에 포함하지 않는다.
+ * fields가 비어 있으면 쓰기 없이 현재 항목을 그대로 반환한다.
+ * @example updateMember('user-123', { name: '홍길동', double: true })
+ * @returns {object} 갱신된 전체 item (PK/SK 포함)
+ */
+async function updateMember(sub, fields) {
+  const safe = Object.fromEntries(
+    Object.entries(fields).filter(([k]) => k !== 'PK' && k !== 'SK'),
+  );
+
+  if (Object.keys(safe).length === 0) {
+    return getMember(sub);
+  }
+
+  const entries = Object.entries(safe);
+  const names   = { '#ua': 'updatedAt' };
+  const values  = { ':ua': new Date().toISOString() };
+  const sets    = ['#ua = :ua'];
+
+  for (let i = 0; i < entries.length; i++) {
+    names[`#f${i}`]  = entries[i][0];
+    values[`:v${i}`] = entries[i][1];
+    sets.push(`#f${i} = :v${i}`);
+  }
+
+  const { Attributes } = await client.send(new UpdateCommand({
+    TableName: TABLE_NAME,
+    Key: { PK: 'MEMBER', SK: sub },
+    UpdateExpression: `SET ${sets.join(', ')}`,
+    ExpressionAttributeNames:  names,
+    ExpressionAttributeValues: values,
+    ReturnValues: 'ALL_NEW',
+  }));
+  return Attributes;
 }
 
 /** @returns {object[]} */
@@ -101,6 +140,7 @@ async function deleteLatestSchedule() {
 module.exports = {
   getMember,
   putMember,
+  updateMember,
   listMembers,
   deleteMember,
   putSchedule,
