@@ -617,7 +617,15 @@ function renderResult(r) {
       const reason = s.reason === 'priority'
         ? `우선순위 ${s.person.priority} - 슬롯 초과로 제외`
         : `슬롯 초과로 부득이 제외 (우선순위 0)`;
-      li.innerHTML = `<strong>${s.person.name}</strong> <span class="badge-skip">제외</span> <span style="color:var(--muted);font-size:12px;">${reason}</span>`;
+      const strong = document.createElement('strong');
+      strong.textContent = s.person.name;
+      const badge = document.createElement('span');
+      badge.className = 'badge-skip';
+      badge.textContent = '제외';
+      const info = document.createElement('span');
+      info.style.cssText = 'color:var(--muted);font-size:12px;';
+      info.textContent = reason;
+      li.append(strong, ' ', badge, ' ', info);
       ul.appendChild(li);
     }
     wrap.appendChild(ul);
@@ -636,7 +644,12 @@ function renderResult(r) {
     const ul = document.createElement('ul');
     for (const f of r.failed) {
       const li = document.createElement('li');
-      li.innerHTML = `<strong>${f.person.name}</strong>: <span style="color:var(--muted);font-size:12px;">${f.reason}</span>`;
+      const strong = document.createElement('strong');
+      strong.textContent = f.person.name;
+      const info = document.createElement('span');
+      info.style.cssText = 'color:var(--muted);font-size:12px;';
+      info.textContent = f.reason;
+      li.append(strong, ': ', info);
       ul.appendChild(li);
     }
     wrap.appendChild(ul);
