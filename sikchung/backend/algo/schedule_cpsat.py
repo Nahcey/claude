@@ -181,13 +181,21 @@ def generate_schedule(eligible):
     wd_only_total_v = model.NewIntVar(0, m, 'wdonly_total_v')
     model.Add(wd_only_total_v == sum(wd_only))
 
-    # 배정된 eligible 인원의 raw unit (= 평일 슬롯 수 + 주말 슬롯 수×2) 최솟값
-    # → 이를 최대화하면 전원 균등 배분 달성
+    # 인원별 raw unit 명시 변수: 평일 슬롯 수 + 주말 슬롯 수×2
+    raw_unit_v = [model.NewIntVar(0, 4, f'rau{i}') for i in range(m)]
+    for i in range(m):
+        model.Add(raw_unit_v[i] ==
+                  sum(x[i][s] for s in range(SLOTS_COUNT)) +
+                  sum(x[i][s] for s in WEEKEND_SLOTS))
+
+    # 배정된 eligible 인원의 raw unit 최솟값 (균등 배분 목표)
+    # Big-M 선형 조건으로 표현: assigned=1 이면 raw_unit_v[i] >= min_raw_unit_v
+    #   raw_unit_v[i] + 4 >= min_raw_unit_v + 4*assigned[i]
+    #   → assigned=1: raw_unit_v[i] >= min_raw_unit_v  ✓
+    #   → assigned=0: raw_unit_v[i] + 4 >= min_raw_unit_v (항상 성립, max 4)  ✓
     min_raw_unit_v = model.NewIntVar(0, 4, 'min_rau_v')
     for i in eligible_idx:
-        raw_u = (sum(x[i][s] for s in range(SLOTS_COUNT)) +
-                 sum(x[i][s] for s in WEEKEND_SLOTS))
-        model.Add(raw_u >= min_raw_unit_v).OnlyEnforceIf(assigned[i])
+        model.Add(raw_unit_v[i] + 4 >= min_raw_unit_v + 4 * assigned[i])
 
     pref_terms = []
     for i in range(m):
@@ -245,6 +253,10 @@ def generate_schedule(eligible):
     v4 = solve_stage('max', min_raw_unit_v, 3.0)
     if v4 is not None:
         model.Add(min_raw_unit_v >= v4)
+        # 이후 단계에서 하한이 해제되지 않도록 per-person 명시 하한 추가
+        if v4 > 0:
+            for i in eligible_idx:
+                model.Add(raw_unit_v[i] + 4 >= v4 + 4 * assigned[i])
 
     # Stage 5: maximize atomic (both morning+evening same day) count  [2s]
     v5 = solve_stage('max', atomic_total_v, 2.0)
