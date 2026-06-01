@@ -7,6 +7,7 @@
 const { authorize }                                  = require('../lib/auth');
 const { getMember, putMember, listMembers }          = require('../lib/db');
 const { ok, badRequest, notFound, unauthorized, forbidden, serverError } = require('../lib/response');
+const { validateRestricted }                         = require('../lib/validate');
 
 exports.handler = async (event) => {
   try {
@@ -43,8 +44,8 @@ exports.handler = async (event) => {
         update.name = body.name.trim();
       }
       if ('restricted' in body) {
-        if (!Array.isArray(body.restricted))  return badRequest('restricted must be an array');
-        if (body.restricted.length > 12)      return badRequest('restricted max length is 12');
+        const err = validateRestricted(body.restricted);
+        if (err) return badRequest(err);
         update.restricted = body.restricted;
       }
       if ('double' in body) {

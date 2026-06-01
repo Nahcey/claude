@@ -10,11 +10,11 @@ if _root not in sys.path:
 from lib.auth import authorize
 from algo.schedule_cpsat import generate_schedule
 
-_CORS = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
+_HEADERS = {'Content-Type': 'application/json'}
 
 
 def _resp(status, body):
-    return {'statusCode': status, 'headers': _CORS, 'body': json.dumps(body, ensure_ascii=False)}
+    return {'statusCode': status, 'headers': _HEADERS, 'body': json.dumps(body, ensure_ascii=False)}
 
 
 def handler(event, context):
@@ -30,6 +30,33 @@ def handler(event, context):
 
     if not isinstance(eligible, list):
         return _resp(400, {'error': 'eligible must be an array'})
+
+    # --- trust boundary: validate all caller-supplied fields ---
+    if len(eligible) > 50:
+        return _resp(400, {'error': 'eligible exceeds maximum of 50'})
+
+    seen_ids = set()
+    for idx, p in enumerate(eligible):
+        if not isinstance(p, dict):
+            return _resp(400, {'error': f'eligible[{idx}] must be an object'})
+        pid = p.get('id')
+        if not isinstance(pid, int):
+            return _resp(400, {'error': f'eligible[{idx}].id must be an integer'})
+        if pid in seen_ids:
+            return _resp(400, {'error': f'duplicate id {pid}'})
+        seen_ids.add(pid)
+        if not isinstance(p.get('name'), str):
+            return _resp(400, {'error': f'eligible[{idx}].name must be a string'})
+        rst = p.get('restricted')
+        if (not isinstance(rst, list) or len(rst) != 12
+                or not all(isinstance(b, bool) for b in rst)):
+            return _resp(400, {'error': f'eligible[{idx}].restricted must be 12 booleans'})
+        if not isinstance(p.get('priority', 0), (int, float)):
+            return _resp(400, {'error': f'eligible[{idx}].priority must be a number'})
+        if 'double' in p and not isinstance(p['double'], bool):
+            return _resp(400, {'error': f'eligible[{idx}].double must be boolean'})
+        if 'rookie' in p and not isinstance(p['rookie'], bool):
+            return _resp(400, {'error': f'eligible[{idx}].rookie must be boolean'})
 
     result = generate_schedule(eligible)
 

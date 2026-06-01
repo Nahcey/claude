@@ -7,6 +7,7 @@
 const { authorize }                                  = require('../lib/auth');
 const { getMember, putMember }                       = require('../lib/db');
 const { ok, badRequest, unauthorized, forbidden, serverError } = require('../lib/response');
+const { validateRestricted }                         = require('../lib/validate');
 
 exports.handler = async (event) => {
   try {
@@ -50,8 +51,8 @@ exports.handler = async (event) => {
       }
 
       if ('restricted' in body) {
-        if (!Array.isArray(body.restricted)) return badRequest('restricted must be an array');
-        if (body.restricted.length > 12)     return badRequest('restricted max length is 12');
+        const err = validateRestricted(body.restricted);
+        if (err) return badRequest(err);
         update.restricted = body.restricted;
       }
 
@@ -63,25 +64,6 @@ exports.handler = async (event) => {
       if ('rookie' in body) {
         if (typeof body.rookie !== 'boolean') return badRequest('rookie must be boolean');
         update.rookie = body.rookie;
-      }
-
-      if ('priority' in body) {
-        if (role !== 'member') {
-          if (typeof body.priority !== 'number') return badRequest('priority must be a number');
-          update.priority = body.priority;
-        }
-        // member는 priority 필드를 조용히 무시한다
-      }
-
-      if ('group' in body) {
-        if (body.group !== null && !['A','B','C','D','E'].includes(body.group))
-          return badRequest('group must be A, B, C, D, E, or null');
-        update.group = body.group;
-      }
-
-      if ('excluded' in body) {
-        if (typeof body.excluded !== 'boolean') return badRequest('excluded must be boolean');
-        update.excluded = body.excluded;
       }
 
       const existing = (await getMember(userSub)) ?? {};
