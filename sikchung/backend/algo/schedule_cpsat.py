@@ -3,6 +3,7 @@ CP-SAT 기반 청소 일정 생성기.
 6단계 축차 최적화 (총 시간 예산 24초).
 """
 import os
+import random
 import sys
 
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,6 +63,7 @@ def generate_schedule(eligible):
     model  = CpModel()
     solver = CpSolver()
     solver.parameters.num_workers = 4
+    solver.parameters.random_seed = random.randint(0, 2_147_483_647)
 
     # ── Decision variables ────────────────────────────────────────────────────
 
