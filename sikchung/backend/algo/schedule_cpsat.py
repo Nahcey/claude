@@ -148,8 +148,13 @@ def generate_schedule(eligible):
     filled_v = model.NewIntVar(0, TOTAL_SLOTS, 'filled_v')
     model.Add(filled_v == sum(x[i][s] for i in range(m) for s in range(SLOTS_COUNT)))
 
-    double_total_v = model.NewIntVar(0, m, 'double_total_v')
-    model.Add(double_total_v == sum(is_dbl))
+    # double=false 인원 중 is_dbl인 수 (2회 배정 OFF인데 2회 들어간 수)
+    non_dbl_idx   = [i for i in range(m) if not active[i].get('double')]
+    non_dbl_dbl_v = model.NewIntVar(0, m, 'nddbl_v')
+    if non_dbl_idx:
+        model.Add(non_dbl_dbl_v == sum(is_dbl[i] for i in non_dbl_idx))
+    else:
+        model.Add(non_dbl_dbl_v == 0)
 
     atomic_total_v = model.NewIntVar(0, m * WEEKDAY_DAYS, 'atomic_total_v')
     model.Add(atomic_total_v == sum(
@@ -158,6 +163,14 @@ def generate_schedule(eligible):
 
     wod_total_v = model.NewIntVar(0, m, 'wod_total_v')
     model.Add(wod_total_v == sum(wod))
+
+    # 배정된 eligible 인원의 raw unit (= 평일 슬롯 수 + 주말 슬롯 수×2) 최솟값
+    # → 이를 최대화하면 전원 균등 배분 달성
+    min_raw_unit_v = model.NewIntVar(0, 4, 'min_rau_v')
+    for i in eligible_idx:
+        raw_u = (sum(x[i][s] for s in range(SLOTS_COUNT)) +
+                 sum(x[i][s] for s in WEEKEND_SLOTS))
+        model.Add(raw_u >= min_raw_unit_v).OnlyEnforceIf(assigned[i])
 
     pref_terms = []
     for i in range(m):
@@ -206,26 +219,31 @@ def generate_schedule(eligible):
     if v2 is not None:
         model.Add(filled_v >= v2)
 
-    # Stage 3: minimize double-assigned count  [4s]
-    v3 = solve_stage('min', double_total_v, 4.0)
+    # Stage 3: double=false 인원의 이중 배정 최소화  [2s]
+    v3 = solve_stage('min', non_dbl_dbl_v, 2.0)
     if v3 is not None:
-        model.Add(double_total_v <= v3)
+        model.Add(non_dbl_dbl_v <= v3)
 
-    # Stage 4: maximize atomic (both morning+evening same day) count  [4s]
-    v4 = solve_stage('max', atomic_total_v, 4.0)
+    # Stage 4: 배정 인원 간 최소 unit 최대화 (균등 배분)  [3s]
+    v4 = solve_stage('max', min_raw_unit_v, 3.0)
     if v4 is not None:
-        model.Add(atomic_total_v >= v4)
+        model.Add(min_raw_unit_v >= v4)
 
-    # Stage 5: minimize weekday-only double count  [2s]
-    v5 = solve_stage('min', wod_total_v, 2.0)
+    # Stage 5: maximize atomic (both morning+evening same day) count  [3s]
+    v5 = solve_stage('max', atomic_total_v, 3.0)
     if v5 is not None:
-        model.Add(wod_total_v <= v5)
+        model.Add(atomic_total_v >= v5)
 
-    # Stage 6: maximize pair preference  [1s]
-    v6 = solve_stage('max', pref_v, 1.0)
+    # Stage 6: minimize weekday-only double count  [2s]
+    v6 = solve_stage('min', wod_total_v, 2.0)
+    if v6 is not None:
+        model.Add(wod_total_v <= v6)
 
-    # If stage 6 found nothing (edge case), ensure solver has a valid solution
-    if v6 is None:
+    # Stage 7: maximize pair preference  [1s]
+    v7 = solve_stage('max', pref_v, 1.0)
+
+    # If stage 7 found nothing (edge case), ensure solver has a valid solution
+    if v7 is None:
         model.Minimize(model.NewConstant(0))
         solver.parameters.max_time_in_seconds = 2.0
         status = solver.Solve(model)
