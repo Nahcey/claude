@@ -125,11 +125,23 @@ def generate_schedule(eligible):
         model.Add(unit_v[i] >= 2).OnlyEnforceIf(is_dbl[i])
         model.Add(unit_v[i] <= 1).OnlyEnforceIf(is_dbl[i].Not())
 
-    # wod[i] = is_dbl AND NOT has_wk  (weekday-only double)
-    wod = [model.NewBoolVar(f'wod{i}') for i in range(m)]
+    # has_wd[i] = OR over weekday slots
+    has_wd = [model.NewBoolVar(f'haswd{i}') for i in range(m)]
     for i in range(m):
-        model.AddBoolAnd([is_dbl[i], has_wk[i].Not()]).OnlyEnforceIf(wod[i])
-        model.AddBoolOr([is_dbl[i].Not(), has_wk[i]]).OnlyEnforceIf(wod[i].Not())
+        model.AddMaxEquality(has_wd[i], [x[i][s] for s in range(SLOTS_COUNT)
+                                         if s not in WEEKEND_SLOTS])
+
+    # mix[i]    = 평일+주말 조합 (has_wd AND has_wk)
+    mix = [model.NewBoolVar(f'mix{i}') for i in range(m)]
+    for i in range(m):
+        model.AddBoolAnd([has_wd[i], has_wk[i]]).OnlyEnforceIf(mix[i])
+        model.AddBoolOr([has_wd[i].Not(), has_wk[i].Not()]).OnlyEnforceIf(mix[i].Not())
+
+    # wd_only[i] = 평일만 조합 (has_wd AND NOT has_wk)
+    wd_only = [model.NewBoolVar(f'wdonly{i}') for i in range(m)]
+    for i in range(m):
+        model.AddBoolAnd([has_wd[i], has_wk[i].Not()]).OnlyEnforceIf(wd_only[i])
+        model.AddBoolOr([has_wd[i].Not(), has_wk[i]]).OnlyEnforceIf(wd_only[i].Not())
 
     # ── Stage objectives ──────────────────────────────────────────────────────
 
@@ -161,8 +173,11 @@ def generate_schedule(eligible):
         atomic[i][d] for i in range(m) for d in range(WEEKDAY_DAYS)
     ))
 
-    wod_total_v = model.NewIntVar(0, m, 'wod_total_v')
-    model.Add(wod_total_v == sum(wod))
+    mix_total_v = model.NewIntVar(0, m, 'mix_total_v')
+    model.Add(mix_total_v == sum(mix))
+
+    wd_only_total_v = model.NewIntVar(0, m, 'wdonly_total_v')
+    model.Add(wd_only_total_v == sum(wd_only))
 
     # 배정된 eligible 인원의 raw unit (= 평일 슬롯 수 + 주말 슬롯 수×2) 최솟값
     # → 이를 최대화하면 전원 균등 배분 달성
@@ -224,26 +239,31 @@ def generate_schedule(eligible):
     if v3 is not None:
         model.Add(non_dbl_dbl_v <= v3)
 
-    # Stage 4: 배정 인원 간 최소 unit 최대화 (균등 배분)  [3s]
-    v4 = solve_stage('max', min_raw_unit_v, 3.0)
+    # Stage 4: 배정 인원 간 최소 unit 최대화 (균등 배분)  [2s]
+    v4 = solve_stage('max', min_raw_unit_v, 2.0)
     if v4 is not None:
         model.Add(min_raw_unit_v >= v4)
 
-    # Stage 5: maximize atomic (both morning+evening same day) count  [3s]
-    v5 = solve_stage('max', atomic_total_v, 3.0)
+    # Stage 5: 2회 배정 인원 평일+주말 조합 최대화  [2s]
+    v5 = solve_stage('max', mix_total_v, 2.0)
     if v5 is not None:
-        model.Add(atomic_total_v >= v5)
+        model.Add(mix_total_v >= v5)
 
-    # Stage 6: minimize weekday-only double count  [2s]
-    v6 = solve_stage('min', wod_total_v, 2.0)
+    # Stage 6: 2회 배정 인원 평일+평일 조합 최대화 (= 주말+주말 최소화)  [2s]
+    v6 = solve_stage('max', wd_only_total_v, 2.0)
     if v6 is not None:
-        model.Add(wod_total_v <= v6)
+        model.Add(wd_only_total_v >= v6)
 
-    # Stage 7: maximize pair preference  [1s]
-    v7 = solve_stage('max', pref_v, 1.0)
+    # Stage 7: maximize atomic (both morning+evening same day) count  [2s]
+    v7 = solve_stage('max', atomic_total_v, 2.0)
+    if v7 is not None:
+        model.Add(atomic_total_v >= v7)
 
-    # If stage 7 found nothing (edge case), ensure solver has a valid solution
-    if v7 is None:
+    # Stage 8: maximize pair preference  [1s]
+    v8 = solve_stage('max', pref_v, 1.0)
+
+    # If stage 8 found nothing (edge case), ensure solver has a valid solution
+    if v8 is None:
         model.Minimize(model.NewConstant(0))
         solver.parameters.max_time_in_seconds = 2.0
         status = solver.Solve(model)
