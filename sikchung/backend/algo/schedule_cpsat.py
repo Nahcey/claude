@@ -246,20 +246,20 @@ def generate_schedule(eligible):
     if v4 is not None:
         model.Add(min_raw_unit_v >= v4)
 
-    # Stage 5: 2회 배정 인원 평일+주말 조합 최대화  [2s]
-    v5 = solve_stage('max', mix_total_v, 2.0)
+    # Stage 5: maximize atomic (both morning+evening same day) count  [2s]
+    v5 = solve_stage('max', atomic_total_v, 2.0)
     if v5 is not None:
-        model.Add(mix_total_v >= v5)
+        model.Add(atomic_total_v >= v5)
 
-    # Stage 6: 2회 배정 인원 평일+평일 조합 최대화 (= 주말+주말 최소화)  [2s]
-    v6 = solve_stage('max', wd_only_total_v, 2.0)
+    # Stage 6: 2회 배정 인원 평일+주말 조합 최대화  [2s]
+    v6 = solve_stage('max', mix_total_v, 2.0)
     if v6 is not None:
-        model.Add(wd_only_total_v >= v6)
+        model.Add(mix_total_v >= v6)
 
-    # Stage 7: maximize atomic (both morning+evening same day) count  [2s]
-    v7 = solve_stage('max', atomic_total_v, 2.0)
+    # Stage 7: 2회 배정 인원 평일+평일 조합 최대화 (= 주말+주말 최소화)  [2s]
+    v7 = solve_stage('max', wd_only_total_v, 2.0)
     if v7 is not None:
-        model.Add(atomic_total_v >= v7)
+        model.Add(wd_only_total_v >= v7)
 
     # Stage 8: maximize pair preference  [1s]
     v8 = solve_stage('max', pref_v, 1.0)
