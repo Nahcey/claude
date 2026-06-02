@@ -99,12 +99,6 @@ def generate_schedule(eligible):
 
     # ── Derived variables ─────────────────────────────────────────────────────
 
-    # in_wd[i][d] = OR(morning, evening) for weekday d
-    in_wd = [[model.NewBoolVar(f'inwd{i}_{d}') for d in range(WEEKDAY_DAYS)] for i in range(m)]
-    for i in range(m):
-        for d in range(WEEKDAY_DAYS):
-            model.AddMaxEquality(in_wd[i][d], [x[i][2*d], x[i][2*d+1]])
-
     # assigned[i] = OR over all slots
     assigned = [model.NewBoolVar(f'asgn{i}') for i in range(m)]
     for i in range(m):
@@ -121,11 +115,12 @@ def generate_schedule(eligible):
     for i in range(m):
         model.AddMaxEquality(has_wk[i], [x[i][s] for s in WEEKEND_SLOTS])
 
-    # unit_v[i] = distinct_weekday_days + 2×weekend_slots  (max = 5 + 2×2 = 9)
-    unit_v = [model.NewIntVar(0, WEEKDAY_DAYS + 2 * len(WEEKEND_SLOTS), f'unit{i}')
+    # unit_v[i] = weekday_slots×1 + weekend_slots×2  (평일 아침·저녁 각 1, 주말 각 2)
+    #   max = (SLOTS_COUNT - 주말슬롯수)×1 + 주말슬롯수×2 = 10 + 4 = 14
+    unit_v = [model.NewIntVar(0, (SLOTS_COUNT - len(WEEKEND_SLOTS)) + 2 * len(WEEKEND_SLOTS), f'unit{i}')
               for i in range(m)]
     for i in range(m):
-        model.Add(unit_v[i] == sum(in_wd[i][d] for d in range(WEEKDAY_DAYS))
+        model.Add(unit_v[i] == sum(x[i][s] for s in range(SLOTS_COUNT) if s not in WEEKEND_SLOTS)
                               + 2 * sum(x[i][s] for s in WEEKEND_SLOTS))
 
     # is_dbl[i] = unit_v[i] >= 2
