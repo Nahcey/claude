@@ -2,7 +2,6 @@
 // GET /me  — 본인 정보 조회 (member 이상)
 // PUT /me  — 본인 정보 수정
 //   허용 필드: name, restricted[], double, rookie
-//   priority: leader/admin만 수정 가능, member는 조용히 무시
 
 const { authorize }                                  = require('../lib/auth');
 const { getMember, putMember, updateMember }          = require('../lib/db');

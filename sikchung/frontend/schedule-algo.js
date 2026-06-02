@@ -19,7 +19,7 @@ function shuffle(arr) {
 
 // ============================================================
 // 우선순위 기반 스킵 로직
-// 인원 > 14면 우선순위 높은 순으로 제외, 동순위는 랜덤.
+// 인원 > TOTAL_SLOTS(24)면 우선순위 높은 순으로 제외, 동순위는 랜덤.
 // 우선순위 0은 절대 제외하지 않음 (다른 선택지가 없는 경우 제외).
 // ============================================================
 function applySkipPriority(input) {
@@ -38,7 +38,7 @@ function applySkipPriority(input) {
     skipped.push({ person: pick, reason: 'priority' });
   }
 
-  // 2) 그래도 > 14면 priority 0 중 무작위 제외 (불가피)
+  // 2) 그래도 > TOTAL_SLOTS(24)면 priority 0 중 무작위 제외 (불가피)
   while (active.length > TOTAL_SLOTS) {
     const tied = shuffle(active);
     const pick = tied[0];

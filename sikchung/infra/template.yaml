@@ -166,6 +166,7 @@ Resources:
               Action:
                 - dynamodb:GetItem
                 - dynamodb:PutItem
+                - dynamodb:UpdateItem
               Resource: !GetAtt SikchungDataTable.Arn
 
   MembersFunction:
@@ -191,9 +192,9 @@ Resources:
         - Statement:
             - Effect: Allow
               Action:
-                - dynamodb:Query    # listMembers
-                - dynamodb:GetItem  # getMember (존재 확인 후 수정)
-                - dynamodb:PutItem  # putMember
+                - dynamodb:Query      # listMembers
+                - dynamodb:GetItem    # getMember (존재 확인 후 수정)
+                - dynamodb:UpdateItem # updateMember
               Resource: !GetAtt SikchungDataTable.Arn
 
   ScheduleFunction:

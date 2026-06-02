@@ -1,6 +1,7 @@
 'use strict';
 // POST /schedule         — 일정 저장 (leader, admin)
 // GET  /schedule/latest  — 최신 일정 조회 (모든 인증 사용자)
+// DELETE /schedule/latest — 최신 일정 삭제 (leader, admin)
 //
 // SK 형식: yyyy-ww (예: 2025-21)
 
