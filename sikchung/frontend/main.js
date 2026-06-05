@@ -447,6 +447,9 @@ async function boot() {
       }
     } catch (e) { console.error('[boot] getLatestSchedule:', e); }
 
+    // 새로운 일정 버튼 노출 (leader+)
+    $('flexScheduleBtn').style.display = '';
+
     // 로그 섹션은 admin 에게만 노출
     if (_currentUser.isAdmin) {
       $('auditSection').style.display = '';
@@ -481,6 +484,7 @@ async function boot() {
 // 로그 (admin 전용)
 // ============================================================
 const AUDIT_ACTION_LABELS = {
+  FLEX_SCHEDULE_GENERATE: '유연 일정 생성',
   SCHEDULE_GENERATE: '일정 생성',
   SCHEDULE_SAVE:     '일정 저장',
   SCHEDULE_DELETE:   '일정 삭제',
@@ -562,5 +566,182 @@ async function loadAuditLogs(reset) {
 
 $('auditLoadBtn').addEventListener('click', () => loadAuditLogs(true));
 $('auditMoreBtn').addEventListener('click', () => loadAuditLogs(false));
+
+// ============================================================
+// 새로운 일정 (Flex Schedule) — 21슬롯, 가변 demand
+// ============================================================
+const _FLEX_DAYS   = ['월', '화', '수', '목', '금', '토', '일'];
+const _FLEX_SHIFTS = ['아침', '점심', '저녁'];
+const _FLEX_TOTAL  = 21;
+
+let _flexDemand = Array(_FLEX_TOTAL).fill(1);
+
+function _buildFlexDemandGrid() {
+  const container = $('flexDemandGrid');
+  container.innerHTML = '';
+  const table = document.createElement('table');
+  table.style.cssText = 'border-collapse:collapse; width:100%; margin-top:4px;';
+
+  const thead = table.createTHead();
+  const hr = thead.insertRow();
+  ['요일', '아침', '점심', '저녁'].forEach((h, i) => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    th.style.cssText = 'padding:4px 8px; text-align:center; font-size:12px; font-weight:600; border-bottom:1px solid var(--border); color:var(--muted);';
+    if (i === 0) th.style.textAlign = 'left';
+    hr.appendChild(th);
+  });
+
+  const tbody = table.createTBody();
+  for (let d = 0; d < 7; d++) {
+    const tr = tbody.insertRow();
+    const tdLabel = tr.insertCell();
+    tdLabel.textContent = _FLEX_DAYS[d];
+    tdLabel.style.cssText = 'padding:5px 8px; font-size:13px; font-weight:600;';
+    for (let sh = 0; sh < 3; sh++) {
+      const s = d * 3 + sh;
+      const td = tr.insertCell();
+      td.style.cssText = 'padding:3px 4px; text-align:center;';
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.min = 0; inp.max = 20;
+      inp.value = _flexDemand[s];
+      inp.dataset.slot = s;
+      inp.style.cssText = 'width:52px; text-align:center; padding:3px 4px; font-size:13px;';
+      inp.addEventListener('input', () => {
+        const v = parseInt(inp.value, 10);
+        _flexDemand[s] = (isNaN(v) || v < 0) ? 0 : v;
+      });
+      td.appendChild(inp);
+    }
+  }
+  container.appendChild(table);
+}
+
+function _openFlexModal() {
+  _buildFlexDemandGrid();
+  $('flexModalOverlay').style.display = 'flex';
+}
+
+function _closeFlexModal() {
+  $('flexModalOverlay').style.display = 'none';
+}
+
+async function _runFlexGenerate() {
+  const btn = $('flexGenerateBtn');
+  btn.disabled = true; btn.textContent = '생성 중…';
+  try {
+    const eligible = people
+      .filter(p => !p.excluded)
+      .map(p => ({
+        id:         p.id,
+        name:       p.name,
+        restricted: Array(_FLEX_TOTAL).fill(false),
+        double:     !!p.double,
+        priority:   p.priority || 0,
+        group:      p.group || null,
+        rookie:     !!p.rookie,
+      }));
+    if (eligible.length === 0) { alert('배정 가능한 인원이 없습니다.'); return; }
+
+    const raw = await API.generateFlexSchedule(eligible, _flexDemand.slice());
+    _closeFlexModal();
+    _renderFlexResult(raw);
+  } catch (e) {
+    alert('생성 실패: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '생성';
+  }
+}
+
+function _renderFlexResult(raw) {
+  const byId = new Map(people.map(p => [p.id, p.name]));
+
+  const schedule = {};
+  for (const [k, ids] of Object.entries(raw.schedule || {})) {
+    schedule[parseInt(k, 10)] = ids;
+  }
+  const shortage = {};
+  for (const [k, v] of Object.entries(raw.shortage || {})) {
+    shortage[parseInt(k, 10)] = v;
+  }
+
+  const tbody = $('flexScheduleBody');
+  tbody.innerHTML = '';
+  for (let d = 0; d < 7; d++) {
+    const tr = document.createElement('tr');
+    const tdDay = document.createElement('td');
+    tdDay.textContent = _FLEX_DAYS[d];
+    tdDay.style.fontWeight = '600';
+    tr.appendChild(tdDay);
+    for (let sh = 0; sh < 3; sh++) {
+      const s = d * 3 + sh;
+      const td = document.createElement('td');
+      if (_flexDemand[s] === 0) {
+        td.textContent = '—';
+        td.style.color = 'var(--muted)';
+      } else {
+        const ids   = schedule[s] || [];
+        const sh_n  = shortage[s] || 0;
+        const names = ids.map(id => byId.get(id) || String(id));
+        td.textContent = names.join(', ') || '(없음)';
+        if (sh_n > 0) {
+          const badge = document.createElement('span');
+          badge.textContent = ' 부족 ' + sh_n;
+          badge.style.cssText = 'font-size:11px; color:#DC2626;';
+          td.appendChild(badge);
+        }
+      }
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+
+  const totalShortage = Object.values(shortage).reduce((a, b) => a + b, 0);
+  const summaryEl = $('flexSummary');
+  summaryEl.innerHTML = '';
+  const sp = document.createElement('p');
+  sp.style.cssText = 'font-size:13px; color:var(--muted); margin:0 0 4px;';
+  sp.textContent = '총 부족: ' + totalShortage + '슬롯';
+  summaryEl.appendChild(sp);
+
+  const assigned = Object.entries(raw.assignCount || {});
+  if (assigned.length > 0) {
+    const sp2 = document.createElement('p');
+    sp2.style.cssText = 'font-size:12px; color:var(--muted); margin:0;';
+    sp2.textContent = '배정: ' + assigned.map(([id, cnt]) => (byId.get(parseInt(id, 10)) || id) + '=' + cnt).join(', ');
+    summaryEl.appendChild(sp2);
+  }
+
+  const optSpan = $('flexOptimalStatus');
+  optSpan.textContent = raw.optimal ? '최적해' : '준최적해';
+  optSpan.style.color = raw.optimal ? 'var(--green)' : 'var(--muted)';
+
+  $('flexResult').style.display = '';
+  $('flexResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+$('flexScheduleBtn').addEventListener('click', () => {
+  if (people.length === 0) { alert('인원이 없습니다.'); return; }
+  _openFlexModal();
+});
+$('flexModalClose').addEventListener('click', _closeFlexModal);
+$('flexModalOverlay').addEventListener('click', (e) => {
+  if (e.target === $('flexModalOverlay')) _closeFlexModal();
+});
+$('flexBulkApplyBtn').addEventListener('click', () => {
+  const v = parseInt($('flexBulkInput').value, 10);
+  if (isNaN(v) || v < 0) return;
+  _flexDemand = Array(_FLEX_TOTAL).fill(v);
+  _buildFlexDemandGrid();
+});
+$('flexGenerateBtn').addEventListener('click', _runFlexGenerate);
+$('flexRegenBtn').addEventListener('click', () => {
+  $('flexResult').style.display = 'none';
+  _openFlexModal();
+});
+$('flexBackBtn').addEventListener('click', () => {
+  $('flexResult').style.display = 'none';
+});
 
 window.addEventListener("load", boot);

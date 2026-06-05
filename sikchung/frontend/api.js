@@ -52,7 +52,8 @@
   const getLatestSchedule   = ()            => fetchApi('/schedule/latest');
   const postSchedule        = (wId, sd)     => fetchApi('/schedule',              { method: 'POST',   body: JSON.stringify({ weekId: wId, scheduleData: sd }) });
   const deleteSchedule      = ()            => fetchApi('/schedule/latest',        { method: 'DELETE' });
-  const generateSchedule    = (eligible)    => fetchApi('/schedule/generate',     { method: 'POST',   body: JSON.stringify({ eligible }) });
+  const generateSchedule    = (eligible)        => fetchApi('/schedule/generate',          { method: 'POST', body: JSON.stringify({ eligible }) });
+  const generateFlexSchedule = (eligible, demand) => fetchApi('/schedule/flex/generate', { method: 'POST', body: JSON.stringify({ eligible, demand }) });
   const postUser            = (d)           => fetchApi('/user',                  { method: 'POST',   body: JSON.stringify(d) });
   const deleteUser          = (sub)         => fetchApi('/user/' + sub,           { method: 'DELETE' });
   const putUserRole         = (sub, role)   => fetchApi('/user/' + sub + '/role', { method: 'PUT',    body: JSON.stringify({ role }) });
@@ -67,7 +68,7 @@
   window.API = {
     getMe, putMe,
     getMembers, putMember,
-    getLatestSchedule, postSchedule, deleteSchedule, generateSchedule,
+    getLatestSchedule, postSchedule, deleteSchedule, generateSchedule, generateFlexSchedule,
     postUser, deleteUser, putUserRole,
     getAuditLogs,
   };

@@ -257,6 +257,32 @@ Resources:
       Dockerfile: Dockerfile
       DockerContext: ../backend
 
+  GenerateFlexScheduleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageConfig:
+        Command: ["handlers.generate_flex_schedule.handler"]
+      Architectures: [arm64]
+      Timeout: 28
+      MemorySize: 2048
+      Events:
+        PostGenerateFlexSchedule:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /schedule/flex/generate
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem   # writeAudit (FLEX_SCHEDULE_GENERATE)
+              Resource: !GetAtt SikchungDataTable.Arn
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ../backend
+
   AdminFunction:
     Type: AWS::Serverless::Function
     Properties:

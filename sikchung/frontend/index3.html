@@ -108,7 +108,59 @@
   <!-- Generate -->
   <div class="actions-row" id="generateSection" style="margin-bottom:20px;">
     <button class="btn btn-primary btn-large" id="generateBtn">일정 생성</button>
+    <button class="btn btn-secondary btn-large" id="flexScheduleBtn" style="display:none;">새로운 일정</button>
     <button class="btn btn-secondary btn-large" id="resetBtn">새로고침</button>
+  </div>
+
+  <!-- 새로운 일정 — demand 입력 모달 -->
+  <div class="modal-overlay" id="flexModalOverlay" style="display:none;">
+    <div class="modal" role="dialog" aria-modal="true" style="max-width:480px; width:95%;">
+      <div class="modal-head">
+        <h3>새로운 일정 — 슬롯별 목표 인원</h3>
+        <button class="modal-close" id="flexModalClose" aria-label="닫기">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label">전체 일괄 입력</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input type="number" min="0" max="20" id="flexBulkInput" placeholder="0"
+              style="width:72px; text-align:center;">
+            <button class="btn btn-secondary" id="flexBulkApplyBtn"
+              style="font-size:12px; padding:4px 12px;">모든 슬롯 적용</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">슬롯별 목표 인원 (0 = 미사용)</label>
+          <div id="flexDemandGrid"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div></div>
+        <button class="btn btn-primary" id="flexGenerateBtn">생성</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 새로운 일정 결과 -->
+  <div id="flexResult" style="display:none;">
+    <div class="card">
+      <h2>새로운 일정 결과
+        <span id="flexOptimalStatus" style="font-size:13px; font-weight:400; color:var(--muted); margin-left:6px;"></span>
+      </h2>
+      <div class="table-wrap">
+        <table class="schedule">
+          <thead>
+            <tr><th>요일</th><th>아침</th><th>점심</th><th>저녁</th></tr>
+          </thead>
+          <tbody id="flexScheduleBody"></tbody>
+        </table>
+      </div>
+      <div id="flexSummary" style="margin-top:12px;"></div>
+      <div class="actions-row" style="margin-top:18px;">
+        <button class="btn btn-primary" id="flexRegenBtn">재생성</button>
+        <button class="btn btn-secondary" id="flexBackBtn">닫기</button>
+      </div>
+    </div>
   </div>
 
   <!-- 최신 일정 (멤버용 read-only, 분대장/관리자는 수정 가능) -->
