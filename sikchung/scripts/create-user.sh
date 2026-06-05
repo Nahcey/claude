@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # leader/member 사용자 단건 생성 (Cognito username 기반 + DynamoDB MEMBER 레코드)
-# 사용법: bash scripts/create-user.sh username role "표시이름" tempPassword [group]
+# 사용법: bash scripts/create-user.sh username role "표시이름" tempPassword group
 # 예시:  bash scripts/create-user.sh wjdqhwndeo01 member "이동민" TempPass123! A
 
 set -e
@@ -16,30 +16,28 @@ GROUP="${5:-}"
 
 usage() {
   cat <<EOF
-사용법: $0 USERNAME ROLE "표시이름" TEMP_PASSWORD [GROUP]
+사용법: $0 USERNAME ROLE "표시이름" TEMP_PASSWORD GROUP
   ROLE   : leader | member
-  GROUP  : A~E 중 하나 (선택, 미지정 시 생략)
+  GROUP  : A~E 중 하나 (필수)
 예시:
   $0 wjdqhwndeo02 leader "김기환" TempPass123! A
   $0 wjdqhwndeo07 member "정한결" TempPass123! B
-  $0 wjdqhwndeo09 member "오승호" TempPass123!
+  $0 wjdqhwndeo09 member "오승호" TempPass123! C
 EOF
   exit 1
 }
 
-[ -n "$USERNAME" ] && [ -n "$ROLE" ] && [ -n "$NAME" ] && [ -n "$TEMP_PW" ] || usage
+[ -n "$USERNAME" ] && [ -n "$ROLE" ] && [ -n "$NAME" ] && [ -n "$TEMP_PW" ] && [ -n "$GROUP" ] || usage
 
 case "$ROLE" in
   leader|member) ;;
   *) echo "ROLE 은 leader 또는 member 만 허용됩니다 (입력: $ROLE)" >&2; usage ;;
 esac
 
-if [ -n "$GROUP" ]; then
-  case "$GROUP" in
-    A|B|C|D|E) ;;
-    *) echo "GROUP 은 A~E 중 하나여야 합니다 (입력: $GROUP)" >&2; usage ;;
-  esac
-fi
+case "$GROUP" in
+  A|B|C|D|E) ;;
+  *) echo "GROUP 은 A~E 중 하나여야 합니다 (입력: $GROUP)" >&2; usage ;;
+esac
 
 validate_password "$TEMP_PW" || { echo "비밀번호 정책 위반" >&2; exit 1; }
 

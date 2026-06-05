@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# 사용자 목록 출력 (그룹별 + 무소속). username / displayName / sub 표시
+# 사용자 목록 출력 (그룹별 + 무소속). username / displayName / 분대그룹 / sub 표시
 # 사용법: bash scripts/list-users.sh
 
 set -e
@@ -31,6 +31,24 @@ fetch_all_users() {
   done
 }
 
+# DynamoDB에서 sub→분대그룹 맵 로드 ("sub\t그룹" 형태)
+fetch_dynamo_groups() {
+  aws dynamodb query \
+    --table-name "$TABLE_NAME" \
+    --region "$AWS_REGION" \
+    --key-condition-expression "PK = :pk" \
+    --expression-attribute-values '{":pk":{"S":"MEMBER"}}' \
+    --projection-expression "SK, #grp" \
+    --expression-attribute-names '{"#grp":"group"}' \
+    --output json 2>/dev/null \
+  | jq -r '.Items[] | .SK.S + "\t" + (.group.S // "-")' || true
+}
+
+# sub 로 분대그룹 조회
+get_dynamo_group() {
+  echo "$DYNAMO_GROUPS" | awk -F'\t' -v s="$1" '$1==s{print $2; exit}'
+}
+
 # 그룹 멤버 username 집합
 group_usernames() {
   aws cognito-idp list-users-in-group \
@@ -45,6 +63,7 @@ if [ -z "$ALL" ]; then
   exit 0
 fi
 
+DYNAMO_GROUPS="$(fetch_dynamo_groups)"
 ADMINS="$(group_usernames admin)"
 LEADERS="$(group_usernames leader)"
 MEMBERS="$(group_usernames member)"
@@ -55,11 +74,14 @@ print_group() {
   local title="$1" set="$2"
   echo ""
   echo "── $title ────────────────────────────────────────"
+  printf "  %-18s %-12s %-6s %s\n" "아이디" "이름" "분대" "sub"
   local any=0
   while IFS=$'\t' read -r uname dname sub; do
     [ -n "$uname" ] || continue
     if in_set "$uname" "$set"; then
-      printf "  • %-16s | %-10s | %s\n" "$uname" "$dname" "$sub"
+      local grp
+      grp="$(get_dynamo_group "$sub")"
+      printf "  • %-16s %-12s %-6s %s\n" "$uname" "$dname" "${grp:--}" "$sub"
       any=1
     fi
   done <<< "$ALL"
@@ -69,11 +91,14 @@ print_group() {
 print_ungrouped() {
   echo ""
   echo "── (무소속) ──────────────────────────────────────"
+  printf "  %-18s %-12s %-6s %s\n" "아이디" "이름" "분대" "sub"
   local any=0
   while IFS=$'\t' read -r uname dname sub; do
     [ -n "$uname" ] || continue
     if ! in_set "$uname" "$ADMINS" && ! in_set "$uname" "$LEADERS" && ! in_set "$uname" "$MEMBERS"; then
-      printf "  • %-16s | %-10s | %s\n" "$uname" "$dname" "$sub"
+      local grp
+      grp="$(get_dynamo_group "$sub")"
+      printf "  • %-16s %-12s %-6s %s\n" "$uname" "$dname" "${grp:--}" "$sub"
       any=1
     fi
   done <<< "$ALL"
