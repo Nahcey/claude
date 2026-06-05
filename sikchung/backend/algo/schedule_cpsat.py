@@ -42,6 +42,7 @@ def generate_schedule(eligible):
     skip_result = apply_skip_priority(eligible)
     active  = skip_result['active']
     skipped = skip_result['skipped']
+    random.shuffle(active)  # 변수 인덱스 편향 제거
     m = len(active)
 
     def _empty_result(optimal=False):
