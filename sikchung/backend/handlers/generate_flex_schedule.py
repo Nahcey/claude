@@ -41,7 +41,7 @@ def handler(event, context):
     if not isinstance(demand, list) or len(demand) != TOTAL_SLOTS:
         return _resp(400, {'error': f'demand must be an array of {TOTAL_SLOTS} integers'})
     for idx, d in enumerate(demand):
-        if not isinstance(d, int) or d < 0:
+        if not isinstance(d, (int, float)) or isinstance(d, bool) or int(d) != d or d < 0:
             return _resp(400, {'error': f'demand[{idx}] must be a non-negative integer'})
         if d > _MAX_DEMAND:
             return _resp(400, {'error': f'demand[{idx}] exceeds maximum of {_MAX_DEMAND}'})
@@ -75,15 +75,20 @@ def handler(event, context):
         if 'rookie' in p and not isinstance(p['rookie'], bool):
             return _resp(400, {'error': f'eligible[{idx}].rookie must be boolean'})
 
-    result = generate_flex_schedule(eligible, demand)
+    try:
+        demand_int = [int(d) for d in demand]
+        result = generate_flex_schedule(eligible, demand_int)
+    except Exception as e:
+        print(f'[generate_flex_schedule] error: {e}', flush=True)
+        return _resp(500, {'error': f'Schedule generation failed: {str(e)}'})
 
     assign_count = {str(k): v for k, v in result['assign_count'].items()}
 
     write_audit(event, auth, 'FLEX_SCHEDULE_GENERATE', {
-        'optimal':      result.get('optimal', False),
-        'totalDemand':  sum(demand),
+        'optimal':       result.get('optimal', False),
+        'totalDemand':   sum(demand_int),
         'totalShortage': sum(result['shortage'].values()),
-        'assignCount':  assign_count,
+        'assignCount':   assign_count,
     })
 
     return _resp(200, {
