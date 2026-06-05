@@ -14,7 +14,16 @@ if _root not in sys.path:
 
 from lib.auth import authorize
 from lib.audit import write_audit
-from algo.schedule_flex_cpsat import generate_flex_schedule, TOTAL_SLOTS
+
+# schedule_flex_cpsat 가 없거나 import 실패 시에도 핸들러가 뜰 수 있게 감쌈
+_FLEX_IMPORT_ERR = None
+_generate_flex   = None
+TOTAL_SLOTS      = 21          # schedule_flex_cpsat.TOTAL_SLOTS 와 동일값 (fallback)
+try:
+    from algo.schedule_flex_cpsat import generate_flex_schedule as _generate_flex, TOTAL_SLOTS
+except Exception as _e:
+    _FLEX_IMPORT_ERR = f'{type(_e).__name__}: {_e}'
+    print(f'[generate_flex_schedule] import error: {_FLEX_IMPORT_ERR}', flush=True)
 
 _HEADERS = {'Content-Type': 'application/json'}
 _MAX_ELIGIBLE = 50
@@ -26,6 +35,9 @@ def _resp(status, body):
 
 
 def handler(event, context):
+    if _FLEX_IMPORT_ERR:
+        return _resp(500, {'error': f'Import failed: {_FLEX_IMPORT_ERR}'})
+
     auth = authorize(event, 'leader')
     if not auth['ok']:
         return _resp(auth['status'], {'error': auth['message']})
@@ -77,7 +89,7 @@ def handler(event, context):
 
     try:
         demand_int = [int(d) for d in demand]
-        result = generate_flex_schedule(eligible, demand_int)
+        result = _generate_flex(eligible, demand_int)
     except Exception as e:
         print(f'[generate_flex_schedule] error: {e}', flush=True)
         return _resp(500, {'error': f'Schedule generation failed: {str(e)}'})
