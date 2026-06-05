@@ -672,26 +672,45 @@ function renderReadOnlySchedule(scheduleData) {
     return;
   }
   if (emptyMsg) emptyMsg.style.display = 'none';
-  // 월~금: 슬롯 쌍 (아침/저녁)
-  for (let i = 0; i < 10; i += 2) {
-    const morning = (scheduleData[i]   || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
-    const evening = (scheduleData[i+1] || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
-    const tr = document.createElement('tr');
-    [TIME_SLOTS[i].day, morning, evening].forEach((t, ci) => {
-      const td = document.createElement('td');
-      td.textContent = t;
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
-  }
-  // 토·일: 단일 슬롯 (colspan=2)
-  for (const idx of [10, 11]) {
-    if (idx >= scheduleData.length) continue;
-    const names = (scheduleData[idx] || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
-    const tr = document.createElement('tr');
-    const tdD = document.createElement('td'); tdD.textContent = TIME_SLOTS[idx].day;
-    const tdN = document.createElement('td'); tdN.colSpan = 2; tdN.textContent = names;
-    tr.appendChild(tdD); tr.appendChild(tdN);
-    tbody.appendChild(tr);
+
+  const headRow = $('latestScheduleHead');
+
+  if (scheduleData.length >= 21) {
+    // 21슬롯 flex 포맷: 7일 × 3교대 (아침/점심/저녁)
+    if (headRow) headRow.innerHTML = '<th>요일</th><th>아침</th><th>점심</th><th>저녁</th>';
+    const DAYS = ['월','화','수','목','금','토','일'];
+    for (let d = 0; d < 7; d++) {
+      const tr = document.createElement('tr');
+      const tdD = document.createElement('td'); tdD.textContent = DAYS[d];
+      tr.appendChild(tdD);
+      for (let sh = 0; sh < 3; sh++) {
+        const s = d * 3 + sh;
+        const names = (scheduleData[s] || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
+        const td = document.createElement('td'); td.textContent = names;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  } else {
+    // 12슬롯 기존 포맷: 월~금 아침/저녁 + 토·일
+    if (headRow) headRow.innerHTML = '<th>요일</th><th>아침</th><th>저녁</th>';
+    for (let i = 0; i < 10; i += 2) {
+      const morning = (scheduleData[i]   || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
+      const evening = (scheduleData[i+1] || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
+      const tr = document.createElement('tr');
+      [TIME_SLOTS[i].day, morning, evening].forEach(t => {
+        const td = document.createElement('td'); td.textContent = t; tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+    for (const idx of [10, 11]) {
+      if (idx >= scheduleData.length) continue;
+      const names = (scheduleData[idx] || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
+      const tr = document.createElement('tr');
+      const tdD = document.createElement('td'); tdD.textContent = TIME_SLOTS[idx].day;
+      const tdN = document.createElement('td'); tdN.colSpan = 2; tdN.textContent = names;
+      tr.appendChild(tdD); tr.appendChild(tdN);
+      tbody.appendChild(tr);
+    }
   }
 }

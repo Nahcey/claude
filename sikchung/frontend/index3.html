@@ -156,9 +156,15 @@
         </table>
       </div>
       <div id="flexSummary" style="margin-top:12px;"></div>
+      <div id="flexEditPanel" style="display:none;"></div>
       <div class="actions-row" style="margin-top:18px;">
         <button class="btn btn-primary" id="flexRegenBtn">재생성</button>
+        <button class="btn btn-secondary" id="flexEditBtn">편집</button>
         <button class="btn btn-secondary" id="flexBackBtn">닫기</button>
+      </div>
+      <div id="flexSaveScheduleRow" style="display:none; margin-top:10px;">
+        <button class="btn btn-primary" id="flexSaveScheduleBtn" style="background:var(--green); border-color:var(--green);">확정 저장</button>
+        <span id="flexSaveScheduleStatus" style="font-size:12px; color:var(--muted); margin-left:8px;"></span>
       </div>
     </div>
   </div>
@@ -172,7 +178,7 @@
     <div class="table-wrap">
       <table class="schedule">
         <thead>
-          <tr><th>요일</th><th>아침</th><th>저녁</th></tr>
+          <tr id="latestScheduleHead"><th>요일</th><th>아침</th><th>저녁</th></tr>
         </thead>
         <tbody id="latestScheduleBody"></tbody>
       </table>
