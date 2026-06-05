@@ -56,7 +56,7 @@ def _log(tag, status, solver):
 
 
 def _pair_preference(pi, pj):
-    """같은 슬롯 배정 선호도 점수: rookie+선임(A/B) 3점, 같은 그룹 1점."""
+    """같은 슬롯 배정 선호도 점수: rookie+선임(A/B) 3점."""
     gi, gj = pi.get('group'), pj.get('group')
     ri, rj = pi.get('rookie', False), pj.get('rookie', False)
     score = 0
@@ -64,8 +64,6 @@ def _pair_preference(pi, pj):
         score += 3
     if rj and not ri and gi in ('A', 'B'):
         score += 3
-    if gi and gj and gi == gj:
-        score += 1
     return score
 
 
