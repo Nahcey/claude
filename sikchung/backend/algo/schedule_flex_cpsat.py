@@ -9,8 +9,11 @@ CP-SAT 기반 유연 인원 스케줄 생성기 (21슬롯, 2-pass 축차 최적�
 
 2-pass 설계
 -----------
-Pass 1: shortage 최소화 → (shortage 고정) max_base 최소화
-Pass 2: Pass 1 최적값을 hard 제약으로 박고, double 주말 페널티 + 페어링 최적화.
+Pass 1 (3단계):
+  1a. shortage 최소화
+  1b. shortage 고정 → max_base(non-double 최대 load) 최소화
+  1c. max_base 고정 → min_base(non-double 최소 load) 최대화  ← 균등 배분 핵심
+Pass 2: shortage·max_base·min_base를 hard 제약으로 박고 double 주말 페널티 + 페어링 최적화.
 두 목표를 가중합으로 뭉개지 않음; 반드시 순차 풀이.
 """
 import json
@@ -27,6 +30,7 @@ WEEKEND_SLOTS = list(range(WEEKEND_START, TOTAL_SLOTS))   # [15..20]
 
 PASS1A_TIME = 5.0   # Stage 1a: shortage 최소화
 PASS1B_TIME = 3.0   # Stage 1b: max_base 최소화 (shortage 고정)
+PASS1C_TIME = 2.0   # Stage 1c: min_base 최대화 (max_base 고정) → 균등 배분 강화
 PASS2_TIME  = 7.0   # Pass 2:   double 초과분·주말 페널티·페어링
 
 _CP_STATUS = {
@@ -149,13 +153,27 @@ def generate_flex_schedule(eligible, demand):
     else:
         m1.Add(max_base1 == 0)
 
-    # ── Stage 1b: non-double 최대 load 최소화 (균등 배분) ────────────────────
+    # ── Stage 1b: non-double 최대 load 최소화 ───────────────────────────────
     m1.Minimize(max_base1)
     s1.parameters.max_time_in_seconds = PASS1B_TIME
     st1b = s1.Solve(m1)
     _log('pass1/max_base', st1b, s1)
 
     max_base_star = round(s1.ObjectiveValue()) if st1b in (OPTIMAL, FEASIBLE) else TOTAL_SLOTS
+    m1.Add(max_base1 == max_base_star)   # max_base 고정
+
+    # ── Stage 1c: non-double 최소 load 최대화 (균등 배분 강화) ──────────────
+    # max만 제약하면 일부 인원 load=0, 나머지 load=max_base_star 인 불균등 해가
+    # 허용됨. min도 최대화해 [min_base_star, max_base_star] 구간을 최대 1 차이로 좁힘.
+    min_base_star = 0
+    if non_dbl_idx:
+        min_base1 = m1.NewIntVar(0, TOTAL_SLOTS, 'min_base')
+        m1.AddMinEquality(min_base1, [load1[i] for i in non_dbl_idx])
+        m1.Maximize(min_base1)
+        s1.parameters.max_time_in_seconds = PASS1C_TIME
+        st1c = s1.Solve(m1)
+        _log('pass1/min_base', st1c, s1)
+        min_base_star = round(s1.ObjectiveValue()) if st1c in (OPTIMAL, FEASIBLE) else 0
 
     # ── Pass 2 ────────────────────────────────────────────────────────────────
     m2 = CpModel()
@@ -181,12 +199,14 @@ def generate_flex_schedule(eligible, demand):
     m2.Add(total_sh2 == sum(sh2))
     m2.Add(total_sh2 == shortage_star)
 
-    # Hard: non-double load ≤ max_base*
+    # Hard: non-double load ∈ [min_base*, max_base*]
     load2 = [m2.NewIntVar(0, TOTAL_SLOTS, f'ld{i}') for i in range(n)]
     for i in range(n):
         m2.Add(load2[i] == sum(x2[i][s] for s in range(TOTAL_SLOTS)))
     for i in non_dbl_idx:
         m2.Add(load2[i] <= max_base_star)
+        if min_base_star > 0:
+            m2.Add(load2[i] >= min_base_star)
 
     # double 인원의 주말 배정 수 (최소화 → 평일 우선)
     max_dbl_wknd = max(1, len(dbl_idx) * len(WEEKEND_SLOTS))
