@@ -18,7 +18,10 @@ Pass 1: shortage(미배정 슬롯 수) 최소화.
   double:   남은 슬롯을 균등 배분 → [dbl_base, dbl_base+1]  (최대 1 차이)
   합계 제약(shortage=shortage_star)이 정확한 분배 수를 자동 결정함.
 
-Pass 2: 배정 목표를 hard 제약으로 박고 double 주말 페널티 + 페어링 최적화.
+Pass 2: 배정 목표를 hard 제약으로 박고 순차 soft 최적화.
+  3순위(soft): 인당 사용 요일 수 최소화 (요일 집중)
+  4순위(soft): double 인원 주말 배정 최소화 (평일 우선)
+  5순위(soft): 페어링 선호 (신병+선임, 같은 그룹)
 두 목표를 가중합으로 뭉개지 않음; 반드시 순차 풀이.
 """
 import json
@@ -223,13 +226,26 @@ def generate_flex_schedule(eligible, demand):
     else:
         m2.Add(pref_v == 0)
 
-    # Objective: pref_v − dbl_wknd * weight
-    # weight > max_pref → 주말 배정 1 감소가 전체 페어링 이득보다 우선
+    # 요일 집중 (3순위 soft — 인당 사용 요일 수 최소화)
+    day_used = [[m2.NewBoolVar(f'du{i}_{d}') for d in range(DAYS)] for i in range(n)]
+    for i in range(n):
+        for d in range(DAYS):
+            m2.AddMaxEquality(day_used[i][d],
+                              [x2[i][d * SHIFTS + sh] for sh in range(SHIFTS)])
+    max_days = n * DAYS
+    total_days = m2.NewIntVar(0, max_days, 'total_days')
+    m2.Add(total_days == sum(day_used[i][d] for i in range(n) for d in range(DAYS)))
+
+    # 목적함수 가중치 (우선순위 3→4→5 보장):
+    #   days_weight > max_dbl_wknd * wknd_weight + max_pref
+    #   wknd_weight > max_pref
     wknd_weight = max_pref + 1
-    obj2_lo     = -(max_dbl_wknd * wknd_weight)
-    obj2_hi     = max(obj2_lo + 1, max_pref)
-    obj2 = m2.NewIntVar(obj2_lo, obj2_hi, 'obj2')
-    m2.Add(obj2 == pref_v - dbl_wknd * wknd_weight)
+    days_weight = max_dbl_wknd * wknd_weight + max_pref + 1
+
+    obj_lo = -(max_days * days_weight + max_dbl_wknd * wknd_weight)
+    obj_hi = max(obj_lo + 1, max_pref)
+    obj2 = m2.NewIntVar(obj_lo, obj_hi, 'obj2')
+    m2.Add(obj2 == pref_v - dbl_wknd * wknd_weight - total_days * days_weight)
     m2.Maximize(obj2)
 
     s2.parameters.max_time_in_seconds = PASS2_TIME
