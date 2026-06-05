@@ -1,6 +1,6 @@
 """
 CP-SAT 기반 청소 일정 생성기.
-8단계 축차 최적화 (총 시간 예산 24초).
+7단계 축차 최적화 (총 시간 예산 22초).
 """
 import json
 import os
@@ -164,14 +164,6 @@ def generate_schedule(eligible):
     filled_v = model.NewIntVar(0, TOTAL_SLOTS, 'filled_v')
     model.Add(filled_v == sum(x[i][s] for i in range(m) for s in range(SLOTS_COUNT)))
 
-    # double=false 인원 중 is_dbl인 수 (2회 배정 OFF인데 2회 들어간 수)
-    non_dbl_idx   = [i for i in range(m) if not active[i].get('double')]
-    non_dbl_dbl_v = model.NewIntVar(0, m, 'nddbl_v')
-    if non_dbl_idx:
-        model.Add(non_dbl_dbl_v == sum(is_dbl[i] for i in non_dbl_idx))
-    else:
-        model.Add(non_dbl_dbl_v == 0)
-
     atomic_total_v = model.NewIntVar(0, m * WEEKDAY_DAYS, 'atomic_total_v')
     model.Add(atomic_total_v == sum(
         atomic[i][d] for i in range(m) for d in range(WEEKDAY_DAYS)
@@ -254,40 +246,35 @@ def generate_schedule(eligible):
     if v2 is not None:
         model.Add(filled_v >= v2)
 
-    # Stage 3: double=false 인원의 이중 배정 최소화  [2s]
-    v3 = solve_stage('min', non_dbl_dbl_v, 2.0, label='non_dbl_dbl')
+    # Stage 3: 배정 인원 간 최소 raw unit 최대화 (균등 배분)  [3s]
+    v3 = solve_stage('max', min_raw_unit_v, 3.0, label='min_raw_unit')
     if v3 is not None:
-        model.Add(non_dbl_dbl_v <= v3)
-
-    # Stage 4: 배정 인원 간 최소 raw unit 최대화 (균등 배분)  [3s]
-    v4 = solve_stage('max', min_raw_unit_v, 3.0, label='min_raw_unit')
-    if v4 is not None:
-        model.Add(min_raw_unit_v >= v4)
+        model.Add(min_raw_unit_v >= v3)
         # 이후 단계에서 하한이 해제되지 않도록 per-person 명시 하한 추가
-        if v4 > 0:
+        if v3 > 0:
             for i in eligible_idx:
-                model.Add(raw_unit_v[i] + 4 >= v4 + 4 * assigned[i])
+                model.Add(raw_unit_v[i] + 4 >= v3 + 4 * assigned[i])
 
-    # Stage 5: maximize atomic (both morning+evening same day) count  [2s]
-    v5 = solve_stage('max', atomic_total_v, 2.0, label='atomic')
+    # Stage 4: maximize atomic (both morning+evening same day) count  [2s]
+    v4 = solve_stage('max', atomic_total_v, 2.0, label='atomic')
+    if v4 is not None:
+        model.Add(atomic_total_v >= v4)
+
+    # Stage 5: 2회 배정 인원 평일+주말 조합 최대화  [2s]
+    v5 = solve_stage('max', mix_total_v, 2.0, label='mix')
     if v5 is not None:
-        model.Add(atomic_total_v >= v5)
+        model.Add(mix_total_v >= v5)
 
-    # Stage 6: 2회 배정 인원 평일+주말 조합 최대화  [2s]
-    v6 = solve_stage('max', mix_total_v, 2.0, label='mix')
+    # Stage 6: 2회 배정 인원 평일+평일 조합 최대화 (= 주말+주말 최소화)  [1s]
+    v6 = solve_stage('max', wd_only_total_v, 1.0, label='wd_only')
     if v6 is not None:
-        model.Add(mix_total_v >= v6)
+        model.Add(wd_only_total_v >= v6)
 
-    # Stage 7: 2회 배정 인원 평일+평일 조합 최대화 (= 주말+주말 최소화)  [1s]
-    v7 = solve_stage('max', wd_only_total_v, 1.0, label='wd_only')
-    if v7 is not None:
-        model.Add(wd_only_total_v >= v7)
+    # Stage 7: maximize pair preference  [1s]
+    v7 = solve_stage('max', pref_v, 1.0, label='pref')
 
-    # Stage 8: maximize pair preference  [1s]
-    v8 = solve_stage('max', pref_v, 1.0, label='pref')
-
-    # If stage 8 found nothing (edge case), ensure solver has a valid solution
-    if v8 is None:
+    # If stage 7 found nothing (edge case), ensure solver has a valid solution
+    if v7 is None:
         model.Minimize(model.NewConstant(0))
         solver.parameters.max_time_in_seconds = 2.0
         status = solver.Solve(model)
