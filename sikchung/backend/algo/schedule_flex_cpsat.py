@@ -1,5 +1,5 @@
 """
-CP-SAT 기반 유연 인원 스케줄 생성기 (21슬롯, 2-pass 축차 최적화).
+CP-SAT 기반 유연 인원 스케줄 생성기 (21슬롯, 2-pass 최적화).
 
 슬롯 구조
 ---------
@@ -9,11 +9,16 @@ CP-SAT 기반 유연 인원 스케줄 생성기 (21슬롯, 2-pass 축차 최적�
 
 2-pass 설계
 -----------
-Pass 1 (3단계):
-  1a. shortage 최소화
-  1b. shortage 고정 → max_base(non-double 최대 load) 최소화
-  1c. max_base 고정 → min_base(non-double 최소 load) 최대화  ← 균등 배분 핵심
-Pass 2: shortage·max_base·min_base를 hard 제약으로 박고 double 주말 페널티 + 페어링 최적화.
+Pass 1: shortage(미배정 슬롯 수) 최소화.
+
+배정 목표 (Pass 1 직후 해석적 계산):
+  nd_base = floor(total_fill / n_all)          ← 전체 인원 기준 1인당 기본 배정량
+  비double: n_dbl > 0 → 정확히 nd_base
+            n_dbl == 0 → [nd_base, nd_base+1]  (최대 1 차이)
+  double:   남은 슬롯을 균등 배분 → [dbl_base, dbl_base+1]  (최대 1 차이)
+  합계 제약(shortage=shortage_star)이 정확한 분배 수를 자동 결정함.
+
+Pass 2: 배정 목표를 hard 제약으로 박고 double 주말 페널티 + 페어링 최적화.
 두 목표를 가중합으로 뭉개지 않음; 반드시 순차 풀이.
 """
 import json
@@ -28,10 +33,8 @@ TOTAL_SLOTS   = DAYS * SHIFTS        # 21
 WEEKEND_START = 5 * SHIFTS           # 15
 WEEKEND_SLOTS = list(range(WEEKEND_START, TOTAL_SLOTS))   # [15..20]
 
-PASS1A_TIME = 5.0   # Stage 1a: shortage 최소화
-PASS1B_TIME = 3.0   # Stage 1b: max_base 최소화 (shortage 고정)
-PASS1C_TIME = 2.0   # Stage 1c: min_base 최대화 (max_base 고정) → 균등 배분 강화
-PASS2_TIME  = 7.0   # Pass 2:   double 초과분·주말 페널티·페어링
+PASS1_TIME = 6.0    # Pass 1: shortage 최소화
+PASS2_TIME = 15.0   # Pass 2: double 주말 페널티 + 페어링 (균등 배분은 hard 제약)
 
 _CP_STATUS = {
     0: 'UNKNOWN', 2: 'OPTIMAL', 3: 'FEASIBLE',
@@ -99,7 +102,7 @@ def generate_flex_schedule(eligible, demand):
     n            = len(eligible)
     total_demand = sum(demand)
 
-    # ── Pass 1 ────────────────────────────────────────────────────────────────
+    # ── Pass 1: shortage 최소화 ───────────────────────────────────────────────
     m1 = CpModel()
     s1 = CpSolver()
     s1.parameters.num_workers = 4
@@ -107,73 +110,50 @@ def generate_flex_schedule(eligible, demand):
 
     x1 = [[m1.NewBoolVar(f'x{i}_{s}') for s in range(TOTAL_SLOTS)] for i in range(n)]
 
-    # Hard: 슬롯별 배정 수 ≤ demand
     for s in range(TOTAL_SLOTS):
         m1.Add(sum(x1[i][s] for i in range(n)) <= demand[s])
-
-    # Hard: restricted 슬롯 배정 금지
     for i, p in enumerate(eligible):
         for s in range(TOTAL_SLOTS):
             if p['restricted'][s]:
                 m1.Add(x1[i][s] == 0)
 
-    # shortage[s] = demand[s] − Σ_i x[i][s]  (≥ 0 by demand hard constraint)
-    sh1 = [m1.NewIntVar(0, demand[s], f'sh{s}') for s in range(TOTAL_SLOTS)]
+    sh1       = [m1.NewIntVar(0, demand[s], f'sh{s}') for s in range(TOTAL_SLOTS)]
     for s in range(TOTAL_SLOTS):
         m1.Add(sh1[s] == demand[s] - sum(x1[i][s] for i in range(n)))
     total_sh1 = m1.NewIntVar(0, total_demand, 'total_sh')
     m1.Add(total_sh1 == sum(sh1))
 
-    # ── Stage 1a: shortage 최소화 ─────────────────────────────────────────────
     m1.Minimize(total_sh1)
-    s1.parameters.max_time_in_seconds = PASS1A_TIME
-    st1a = s1.Solve(m1)
-    _log('pass1/shortage', st1a, s1)
+    s1.parameters.max_time_in_seconds = PASS1_TIME
+    st1 = s1.Solve(m1)
+    _log('pass1/shortage', st1, s1)
 
-    if st1a not in (OPTIMAL, FEASIBLE):
+    if st1 not in (OPTIMAL, FEASIBLE):
         return {**_empty,
                 'failed':  [{'person': p, 'reason': '해 없음'} for p in eligible],
                 'optimal': False}
 
     shortage_star = round(s1.ObjectiveValue())
-    m1.Add(total_sh1 == shortage_star)   # shortage 고정
 
-    # 인당 load
-    load1 = [m1.NewIntVar(0, TOTAL_SLOTS, f'ld{i}') for i in range(n)]
-    for i in range(n):
-        m1.Add(load1[i] == sum(x1[i][s] for s in range(TOTAL_SLOTS)))
-
+    # ── 배정 목표 계산 (해석적) ────────────────────────────────────────────────
     non_dbl_idx = [i for i in range(n) if not eligible[i].get('double')]
     dbl_idx     = [i for i in range(n) if     eligible[i].get('double')]
+    n_non_dbl   = len(non_dbl_idx)
+    n_dbl       = len(dbl_idx)
 
-    # max_base = non-double 인원 중 최대 load (없으면 0)
-    max_base1 = m1.NewIntVar(0, TOTAL_SLOTS, 'max_base')
-    if non_dbl_idx:
-        m1.AddMaxEquality(max_base1, [load1[i] for i in non_dbl_idx])
+    total_fill = total_demand - shortage_star
+    nd_base    = total_fill // n   # 전체 인원 기준 1인당 기본 배정량
+
+    if n_dbl == 0:
+        # 전원 비double: 최대 1 차이로 균등
+        nd_lo, nd_hi = nd_base, nd_base + 1
+        dbl_lo, dbl_hi = 0, 0   # 사용 안 됨
     else:
-        m1.Add(max_base1 == 0)
-
-    # ── Stage 1b: non-double 최대 load 최소화 ───────────────────────────────
-    m1.Minimize(max_base1)
-    s1.parameters.max_time_in_seconds = PASS1B_TIME
-    st1b = s1.Solve(m1)
-    _log('pass1/max_base', st1b, s1)
-
-    max_base_star = round(s1.ObjectiveValue()) if st1b in (OPTIMAL, FEASIBLE) else TOTAL_SLOTS
-    m1.Add(max_base1 == max_base_star)   # max_base 고정
-
-    # ── Stage 1c: non-double 최소 load 최대화 (균등 배분 강화) ──────────────
-    # max만 제약하면 일부 인원 load=0, 나머지 load=max_base_star 인 불균등 해가
-    # 허용됨. min도 최대화해 [min_base_star, max_base_star] 구간을 최대 1 차이로 좁힘.
-    min_base_star = 0
-    if non_dbl_idx:
-        min_base1 = m1.NewIntVar(0, TOTAL_SLOTS, 'min_base')
-        m1.AddMinEquality(min_base1, [load1[i] for i in non_dbl_idx])
-        m1.Maximize(min_base1)
-        s1.parameters.max_time_in_seconds = PASS1C_TIME
-        st1c = s1.Solve(m1)
-        _log('pass1/min_base', st1c, s1)
-        min_base_star = round(s1.ObjectiveValue()) if st1c in (OPTIMAL, FEASIBLE) else 0
+        # 비double은 정확히 nd_base, 나머지 슬롯을 double이 균등 배분
+        nd_lo, nd_hi  = nd_base, nd_base
+        remaining     = total_fill - n_non_dbl * nd_base
+        dbl_base      = remaining // n_dbl
+        dbl_lo, dbl_hi = dbl_base, dbl_base + 1
 
     # ── Pass 2 ────────────────────────────────────────────────────────────────
     m2 = CpModel()
@@ -191,7 +171,7 @@ def generate_flex_schedule(eligible, demand):
             if p['restricted'][s]:
                 m2.Add(x2[i][s] == 0)
 
-    # Hard: shortage == shortage*
+    # Hard: shortage == shortage*  (합계가 고정되므로 load 분배 수도 자동 결정)
     sh2 = [m2.NewIntVar(0, demand[s], f'sh{s}') for s in range(TOTAL_SLOTS)]
     for s in range(TOTAL_SLOTS):
         m2.Add(sh2[s] == demand[s] - sum(x2[i][s] for i in range(n)))
@@ -199,14 +179,18 @@ def generate_flex_schedule(eligible, demand):
     m2.Add(total_sh2 == sum(sh2))
     m2.Add(total_sh2 == shortage_star)
 
-    # Hard: non-double load ∈ [min_base*, max_base*]
+    # Hard: 균등 배분 load 제약
+    #   비double: [nd_lo, nd_hi]  (n_dbl>0 이면 nd_lo==nd_hi → 정확히 nd_base)
+    #   double:   [dbl_lo, dbl_hi]  (최대 1 차이)
     load2 = [m2.NewIntVar(0, TOTAL_SLOTS, f'ld{i}') for i in range(n)]
     for i in range(n):
         m2.Add(load2[i] == sum(x2[i][s] for s in range(TOTAL_SLOTS)))
     for i in non_dbl_idx:
-        m2.Add(load2[i] <= max_base_star)
-        if min_base_star > 0:
-            m2.Add(load2[i] >= min_base_star)
+        m2.Add(load2[i] >= nd_lo)
+        m2.Add(load2[i] <= nd_hi)
+    for i in dbl_idx:
+        m2.Add(load2[i] >= dbl_lo)
+        m2.Add(load2[i] <= dbl_hi)
 
     # double 인원의 주말 배정 수 (최소화 → 평일 우선)
     max_dbl_wknd = max(1, len(dbl_idx) * len(WEEKEND_SLOTS))
@@ -297,14 +281,11 @@ def generate_flex_schedule(eligible, demand):
 # ── 단위 검증 (__main__) ──────────────────────────────────────────────────────
 #
 # 검증 항목:
-#   (a) 2-pass가 실제로 두 번 solve를 호출하는지
-#       → stderr에 [pass1/shortage], [pass1/max_base], [pass2] 3줄 출력되면 ✓
-#   (b) Pass 1 최적값이 Pass 2에 hard 제약으로 박히는지
-#       → shortage_star / max_base_star 출력값 확인
+#   (a) pass1/shortage, pass2 2줄 출력 → 2-pass 동작 ✓
+#   (b) 비double 인원이 모두 nd_base 개씩 배정되는지 (n_dbl>0 → 완전 균등)
 #   (c) double 인원이 평일부터 채워지고 주말 쏠림이 없는지
-#       → 인당 배정 수 표에서 double 인원 주말 수 vs 평일 수 확인
-#   (d) demand 합 < 가용 인원일 때 부하가 고르게 퍼지는지
-#       → demand=[2]*21 (총 42슬롯), 8명 → 평균 5.25, max_base 기대값 5~6
+#   (d) demand=[2]*21 (총 42슬롯), 8명 (7 비double + 1 double):
+#       nd_base = 42//8 = 5 → 비double 각 5, double 1명이 7
 
 if __name__ == '__main__':
     DAY_NAMES   = ['월', '화', '수', '목', '금', '토', '일']
