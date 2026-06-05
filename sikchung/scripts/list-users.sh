@@ -74,7 +74,7 @@ print_group() {
   local title="$1" set="$2"
   echo ""
   echo "── $title ────────────────────────────────────────"
-  printf "  %-18s %-12s %-6s %s\n" "아이디" "이름" "분대" "sub"
+  printf "  %-18s %-12s %-6s %s\n" "아이디" "이름" "라인" "sub"
   local any=0
   while IFS=$'\t' read -r uname dname sub; do
     [ -n "$uname" ] || continue
@@ -91,7 +91,7 @@ print_group() {
 print_ungrouped() {
   echo ""
   echo "── (무소속) ──────────────────────────────────────"
-  printf "  %-18s %-12s %-6s %s\n" "아이디" "이름" "분대" "sub"
+  printf "  %-18s %-12s %-6s %s\n" "아이디" "이름" "라인" "sub"
   local any=0
   while IFS=$'\t' read -r uname dname sub; do
     [ -n "$uname" ] || continue
