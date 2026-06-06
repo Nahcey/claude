@@ -44,6 +44,7 @@ Resources:
             MaxLength: "50"
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true
+        TemporaryPasswordValidityDays: 90   # 임시 비번 유효기간 (기본 7일 → 90일)
       LambdaConfig:
         PostConfirmation: !GetAtt PostConfirmationFunction.Arn
 
