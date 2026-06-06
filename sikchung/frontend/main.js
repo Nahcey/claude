@@ -434,6 +434,9 @@ async function boot() {
     }
     renderPeople();
     updateStatus();
+    // 새로운 일정 버튼 노출 (leader+) — API 호출 전 즉시 표시
+    $('flexScheduleBtn').style.display = '';
+
     // 최신 일정 표시 + 수정/삭제 버튼 노출
     $('latestScheduleSection').style.display = '';
     $('editLatestBtn').style.display = '';
@@ -446,9 +449,6 @@ async function boot() {
         renderReadOnlySchedule(schedule.scheduleData);
       }
     } catch (e) { console.error('[boot] getLatestSchedule:', e); }
-
-    // 새로운 일정 버튼 노출 (leader+)
-    $('flexScheduleBtn').style.display = '';
 
     // 로그 섹션은 admin 에게만 노출
     if (_currentUser.isAdmin) {
