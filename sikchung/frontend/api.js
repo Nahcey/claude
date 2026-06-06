@@ -57,6 +57,7 @@
   const postUser            = (d)           => fetchApi('/user',                  { method: 'POST',   body: JSON.stringify(d) });
   const deleteUser          = (sub)         => fetchApi('/user/' + sub,           { method: 'DELETE' });
   const putUserRole         = (sub, role)   => fetchApi('/user/' + sub + '/role', { method: 'PUT',    body: JSON.stringify({ role }) });
+  const changePassword      = (prev, next)    => fetchApi('/me/password',           { method: 'PUT',    body: JSON.stringify({ previousPassword: prev, proposedPassword: next }) });
   const getAuditLogs        = (limit, cursor) => {
     const p = new URLSearchParams();
     if (limit)  p.set('limit', limit);
@@ -66,7 +67,7 @@
   };
 
   window.API = {
-    getMe, putMe,
+    getMe, putMe, changePassword,
     getMembers, putMember,
     getLatestSchedule, postSchedule, deleteSchedule, generateSchedule, generateFlexSchedule,
     postUser, deleteUser, putUserRole,

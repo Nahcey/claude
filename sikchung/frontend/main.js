@@ -448,7 +448,7 @@ async function boot() {
     btn.disabled = true; btn.textContent = '변경 중…';
     statusEl.textContent = '';
     try {
-      await Auth.changePassword(oldPw, newPw);
+      await API.changePassword(oldPw, newPw);
       statusEl.style.color = 'var(--green)';
       statusEl.textContent = '비밀번호가 변경되었습니다.';
       $('changePwOld').value = '';
