@@ -218,7 +218,7 @@ function renderModalBody() {
   // 월~금 (5행)
   for (let i = 0; i < 5; i++) appendWeekdayRow(i);
   // 토·일 (각 행에 단일 '저녁' 버튼이 전체 폭)
-  for (let i = 10; i < SLOTS_COUNT; i++) {
+  for (let i = WEEKEND_SLOT_START; i < SLOTS_COUNT; i++) {
     const label = document.createElement('div');
     label.className = 'day-label-cell';
     label.textContent = TIME_SLOTS[i].day;
@@ -280,7 +280,7 @@ function updateStatus() {
 // ============================================================
 // 결과 렌더
 // ============================================================
-function isWeekendSlot(idx) { return idx >= 10; }
+function isWeekendSlot(idx) { return idx >= WEEKEND_SLOT_START; }
 
 // ============================================================
 // 결과 화면 편집 모드
@@ -543,7 +543,7 @@ function renderResult(r) {
     if (m[1] && e[1] && m[1].id === e[1].id) s++;
     return s;
   }
-  for (let i = 0; i < 10; i += 2) {
+  for (let i = 0; i < WEEKEND_SLOT_START; i += 2) {
     const m = r.schedule[i];
     const e = r.schedule[i+1];
     if (!e[0] && !e[1]) continue;
@@ -558,7 +558,7 @@ function renderResult(r) {
   const weekendIds = new Set();
   for (let i = 0; i < SLOTS_COUNT; i++) {
     for (const p of r.schedule[i]) if (p) {
-      if (i >= 10) weekendIds.add(p.id); else weekdayIds.add(p.id);
+      if (i >= WEEKEND_SLOT_START) weekendIds.add(p.id); else weekdayIds.add(p.id);
     }
   }
   const trueCrossover = new Set();
@@ -582,7 +582,7 @@ function renderResult(r) {
       morningIdx = dayIdx * 2;
       eveningIdx = dayIdx * 2 + 1;
     } else {
-      eveningIdx = 10 + (dayIdx - 5);
+      eveningIdx = WEEKEND_SLOT_START + (dayIdx - 5);
     }
 
     tr.appendChild(buildShiftCell(morningIdx, r, trueCrossover));
@@ -675,7 +675,7 @@ function renderReadOnlySchedule(scheduleData) {
 
   const headRow = $('latestScheduleHead');
 
-  if (scheduleData.length >= 21) {
+  if (scheduleData.length >= FLEX_SLOTS_COUNT) {
     // 21슬롯 flex 포맷: 7일 × 3교대 (아침/점심/저녁)
     if (headRow) headRow.innerHTML = '<th>요일</th><th>아침</th><th>점심</th><th>저녁</th>';
     const DAYS = ['월','화','수','목','금','토','일'];
@@ -694,7 +694,7 @@ function renderReadOnlySchedule(scheduleData) {
   } else {
     // 12슬롯 기존 포맷: 월~금 아침/저녁 + 토·일
     if (headRow) headRow.innerHTML = '<th>요일</th><th>아침</th><th>저녁</th>';
-    for (let i = 0; i < 10; i += 2) {
+    for (let i = 0; i < WEEKEND_SLOT_START; i += 2) {
       const morning = (scheduleData[i]   || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
       const evening = (scheduleData[i+1] || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
       const tr = document.createElement('tr');
@@ -703,7 +703,7 @@ function renderReadOnlySchedule(scheduleData) {
       });
       tbody.appendChild(tr);
     }
-    for (const idx of [10, 11]) {
+    for (const idx of [WEEKEND_SLOT_START, WEEKEND_SLOT_START + 1]) {
       if (idx >= scheduleData.length) continue;
       const names = (scheduleData[idx] || []).filter(Boolean).map(p => p.name || p).join(', ') || '—';
       const tr = document.createElement('tr');

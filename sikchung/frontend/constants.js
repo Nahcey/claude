@@ -17,9 +17,11 @@ const TIME_SLOTS = [
   { day:'토', shift:'저녁', label:'토 저녁' },  // 10
   { day:'일', shift:'저녁', label:'일 저녁' }   // 11
 ];
-const SLOTS_COUNT  = TIME_SLOTS.length;          // 12
-const SLOTS_PER_DAY = 2;                          // 각 시간 슬롯당 인원
-const TOTAL_SLOTS  = SLOTS_COUNT * SLOTS_PER_DAY; // 24
+const SLOTS_COUNT       = TIME_SLOTS.length;          // 12
+const SLOTS_PER_DAY     = 2;                          // 각 시간 슬롯당 인원
+const TOTAL_SLOTS       = SLOTS_COUNT * SLOTS_PER_DAY; // 24
+const WEEKEND_SLOT_START = 10;  // 슬롯 인덱스 10부터 주말(토·일)
+const FLEX_SLOTS_COUNT   = 21;  // flex 21슬롯 (7일 × 아침/점심/저녁)
 const DEFAULT_NAMES = [
   '이동민','김기환','정우진','윤민형','한우현',
   '권정훈','정한결','김최원','오승호','박예찬',
@@ -49,7 +51,7 @@ function assignUnitsOf(schedule) {
   for (let s = 0; s < SLOTS_COUNT; s++) {
     for (const p of schedule[s]) {
       if (!p || p.id == null) continue;
-      if (s >= 10) weCnt.set(p.id, (weCnt.get(p.id) || 0) + 1);
+      if (s >= WEEKEND_SLOT_START) weCnt.set(p.id, (weCnt.get(p.id) || 0) + 1);
       else         wdCnt.set(p.id, (wdCnt.get(p.id) || 0) + 1);
     }
   }

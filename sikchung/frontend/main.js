@@ -558,7 +558,7 @@ $('auditMoreBtn').addEventListener('click', () => loadAuditLogs(false));
 // ============================================================
 const _FLEX_DAYS   = ['월', '화', '수', '목', '금', '토', '일'];
 const _FLEX_SHIFTS = ['아침', '점심', '저녁'];
-const _FLEX_TOTAL  = 21;
+const _FLEX_TOTAL  = FLEX_SLOTS_COUNT;
 
 let _flexDemand       = Array(_FLEX_TOTAL).fill(1);
 let _flexState        = null;    // {schedule, demand, shortage, optimal}
