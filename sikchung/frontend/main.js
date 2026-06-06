@@ -274,6 +274,15 @@ function getISOWeekId(d) {
   return utc.getUTCFullYear() + '-' + String(weekNo).padStart(2, '0');
 }
 
+async function refreshLatestSchedule() {
+  const latest = await API.getLatestSchedule();
+  if (latest && latest.weekId) {
+    $('latestWeekId').textContent = '(' + latest.weekId + ')'
+      + (latest.generatedAt ? ' · 생성 ' + fmtKST(latest.generatedAt) : '');
+    renderReadOnlySchedule(latest.scheduleData);
+  }
+}
+
 // ============================================================
 // 확정 저장 버튼
 // ============================================================
@@ -292,14 +301,7 @@ $('saveScheduleBtn').addEventListener('click', async () => {
     statusEl.textContent = `저장됨 (${weekId})`;
     statusEl.style.color = 'var(--green)';
     // 저장 후 최신 일정 카드 갱신
-    try {
-      const latest = await API.getLatestSchedule();
-      if (latest && latest.weekId) {
-        $('latestWeekId').textContent = '(' + latest.weekId + ')'
-          + (latest.generatedAt ? ' · 생성 ' + fmtKST(latest.generatedAt) : '');
-        renderReadOnlySchedule(latest.scheduleData);
-      }
-    } catch (_) {}
+    try { await refreshLatestSchedule(); } catch (_) {}
   } catch (e) {
     statusEl.textContent = '저장 실패: ' + e.message;
     statusEl.style.color = 'var(--red)';
@@ -439,14 +441,7 @@ async function boot() {
     $('latestScheduleSection').style.display = '';
     $('editLatestBtn').style.display = '';
     $('deleteLatestBtn').style.display = '';
-    try {
-      const schedule = await API.getLatestSchedule();
-      if (schedule && schedule.weekId) {
-        $('latestWeekId').textContent = '(' + schedule.weekId + ')'
-          + (schedule.generatedAt ? ' · 생성 ' + fmtKST(schedule.generatedAt) : '');
-        renderReadOnlySchedule(schedule.scheduleData);
-      }
-    } catch (e) { console.error('[boot] getLatestSchedule:', e); }
+    try { await refreshLatestSchedule(); } catch (e) { console.error('[boot] getLatestSchedule:', e); }
 
     // 로그 섹션은 admin 에게만 노출
     if (_currentUser.isAdmin) {
@@ -465,14 +460,7 @@ async function boot() {
       people = [_mapMeToPersonEntry(me)];
       nextId = 2;
     } catch (e) { console.error('[boot] getMe:', e); }
-    try {
-      const schedule = await API.getLatestSchedule();
-      if (schedule && schedule.weekId) {
-        $('latestWeekId').textContent = '(' + schedule.weekId + ')'
-          + (schedule.generatedAt ? ' · 생성 ' + fmtKST(schedule.generatedAt) : '');
-        renderReadOnlySchedule(schedule.scheduleData);
-      }
-    } catch (e) { console.error('[boot] getLatestSchedule:', e); }
+    try { await refreshLatestSchedule(); } catch (e) { console.error('[boot] getLatestSchedule:', e); }
     renderPeople();
     updateStatus();
   }
@@ -968,14 +956,7 @@ $('flexSaveScheduleBtn').addEventListener('click', async () => {
     await API.postSchedule(weekId, scheduleData);
     statusEl.textContent = `저장됨 (${weekId})`;
     statusEl.style.color = 'var(--green)';
-    try {
-      const latest = await API.getLatestSchedule();
-      if (latest && latest.weekId) {
-        $('latestWeekId').textContent = '(' + latest.weekId + ')'
-          + (latest.generatedAt ? ' · 생성 ' + fmtKST(latest.generatedAt) : '');
-        renderReadOnlySchedule(latest.scheduleData);
-      }
-    } catch (_) {}
+    try { await refreshLatestSchedule(); } catch (_) {}
   } catch (e) {
     statusEl.textContent = '저장 실패: ' + e.message;
     statusEl.style.color = 'var(--red)';
