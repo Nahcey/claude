@@ -49,7 +49,7 @@
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('client_id', clientId);
     url.searchParams.set('redirect_uri', redirectUri);
-    url.searchParams.set('scope', 'openid email profile');
+    url.searchParams.set('scope', 'openid email profile aws.cognito.signin.user.admin');
     window.location.href = url.toString();
   }
 
@@ -154,10 +154,15 @@
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       const type = data.__type || '';
-      if (type === 'NotAuthorizedException')   throw new Error('현재 비밀번호가 틀렸습니다.');
+      const msg  = data.message || '';
+      if (type === 'NotAuthorizedException') {
+        if (msg.toLowerCase().includes('scope') || msg.toLowerCase().includes('token'))
+          throw new Error('로그아웃 후 다시 로그인하면 변경할 수 있습니다.');
+        throw new Error('현재 비밀번호가 틀렸습니다.');
+      }
       if (type === 'InvalidPasswordException') throw new Error('새 비밀번호가 정책을 위반합니다.');
       if (type === 'LimitExceededException')   throw new Error('시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요.');
-      throw new Error(data.message || '비밀번호 변경 실패');
+      throw new Error(msg || '비밀번호 변경 실패');
     }
   }
 

@@ -77,6 +77,7 @@ Resources:
         - openid
         - email
         - profile
+        - aws.cognito.signin.user.admin   # ChangePassword 등 Cognito API 직접 호출 허용
       AllowedOAuthFlowsUserPoolClient: true
       CallbackURLs:
         - https://placeholder.example.com/callback   # 5단계에서 CloudFront URL로 교체
