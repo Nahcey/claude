@@ -339,29 +339,6 @@ Resources:
                 - cognito-idp:ListUsers
               Resource: !GetAtt UserPool.Arn
 
-  ChangePasswordFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Runtime: nodejs22.x
-      CodeUri: ../backend/
-      Handler: handlers/password.handler
-      Environment:
-        Variables:
-          USER_POOL_ID: !Ref UserPool
-      Events:
-        PutMePassword:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Method: PUT
-            Path: /me/password
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - cognito-idp:AdminSetUserPassword
-              Resource: !GetAtt UserPool.Arn
-
   AuditLogFunction:
     Type: AWS::Serverless::Function
     Properties:
