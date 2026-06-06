@@ -331,7 +331,7 @@ $('editLatestBtn').addEventListener('click', async () => {
         const matched = (entry.sub && bySub.get(entry.sub)) || byName.get(entry.name);
         if (matched) return matched;
         // 명단에 없는 인원: 이름만 유지, 수정 시 제거/교체 가능
-        return { id: orphanId--, name: entry.name, restricted: Array(12).fill(false), double: false, priority: 0, excluded: false };
+        return { id: orphanId--, name: entry.name, restricted: Array(SLOTS_COUNT).fill(false), double: false, priority: 0, excluded: false };
       })
     );
     while (schedule.length < SLOTS_COUNT) schedule.push([null, null]);
