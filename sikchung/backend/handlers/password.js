@@ -1,10 +1,9 @@
 'use strict';
 // PUT /me/password — 본인 비밀번호 변경 (member 이상)
-// 현재 비밀번호를 ADMIN_USER_PASSWORD_AUTH 로 검증 후 새 비밀번호 영구 설정.
+// API Gateway JWT 인증이 이미 완료된 상태에서 새 비밀번호를 영구 설정한다.
 
 const {
   CognitoIdentityProviderClient,
-  AdminInitiateAuthCommand,
   AdminSetUserPasswordCommand,
 } = require('@aws-sdk/client-cognito-identity-provider');
 
@@ -12,7 +11,6 @@ const { authorize }   = require('../lib/auth');
 const { ok, badRequest, unauthorized, forbidden, serverError } = require('../lib/response');
 
 const USER_POOL_ID = process.env.USER_POOL_ID;
-const CLIENT_ID    = process.env.CLIENT_ID;
 
 const cognito = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'ap-northeast-2',
@@ -42,10 +40,8 @@ exports.handler = async (event) => {
     let body;
     try { body = JSON.parse(event.body || '{}'); } catch { return badRequest('Invalid JSON'); }
 
-    const { previousPassword, proposedPassword } = body;
-    if (!previousPassword || !proposedPassword) {
-      return badRequest('previousPassword와 proposedPassword가 필요합니다.');
-    }
+    const { proposedPassword } = body;
+    if (!proposedPassword) return badRequest('proposedPassword가 필요합니다.');
 
     const pwErr = validatePassword(proposedPassword);
     if (pwErr) return badRequest(pwErr);
@@ -53,23 +49,6 @@ exports.handler = async (event) => {
     const claims   = event.requestContext.authorizer.jwt.claims;
     const username = claims['cognito:username'] || claims.sub;
 
-    // 현재 비밀번호 검증 — 성공(토큰 반환) 또는 챌린지(FORCE_CHANGE_PASSWORD 등) 모두 "맞음"으로 처리
-    try {
-      await cognito.send(new AdminInitiateAuthCommand({
-        AuthFlow:       'ADMIN_USER_PASSWORD_AUTH',
-        UserPoolId:     USER_POOL_ID,
-        ClientId:       CLIENT_ID,
-        AuthParameters: { USERNAME: username, PASSWORD: previousPassword },
-      }));
-    } catch (e) {
-      const code = e.name || '';
-      if (code === 'NotAuthorizedException' || code === 'UserNotFoundException') {
-        return unauthorized('현재 비밀번호가 틀렸습니다.');
-      }
-      throw e;
-    }
-
-    // 새 비밀번호로 영구 설정 (Lambda IAM 권한 사용)
     await cognito.send(new AdminSetUserPasswordCommand({
       UserPoolId: USER_POOL_ID,
       Username:   username,

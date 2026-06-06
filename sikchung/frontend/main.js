@@ -420,7 +420,6 @@ async function boot() {
     Auth.logout();
   });
   $('changePwBtn').addEventListener('click', () => {
-    $('changePwOld').value = '';
     $('changePwNew').value = '';
     $('changePwConfirm').value = '';
     $('changePwStatus').textContent = '';
@@ -433,13 +432,12 @@ async function boot() {
     if (e.target === $('changePwOverlay')) $('changePwOverlay').style.display = 'none';
   });
   $('changePwSubmit').addEventListener('click', async () => {
-    const oldPw  = $('changePwOld').value;
     const newPw  = $('changePwNew').value;
     const confPw = $('changePwConfirm').value;
     const statusEl = $('changePwStatus');
 
-    if (!oldPw || !newPw || !confPw) { statusEl.style.color = '#DC2626'; statusEl.textContent = '모든 칸을 입력하세요.'; return; }
-    if (newPw !== confPw)            { statusEl.style.color = '#DC2626'; statusEl.textContent = '새 비밀번호가 일치하지 않습니다.'; return; }
+    if (!newPw || !confPw) { statusEl.style.color = '#DC2626'; statusEl.textContent = '모든 칸을 입력하세요.'; return; }
+    if (newPw !== confPw)  { statusEl.style.color = '#DC2626'; statusEl.textContent = '새 비밀번호가 일치하지 않습니다.'; return; }
     if (newPw.length < 8 || !/[A-Z]/.test(newPw) || !/[a-z]/.test(newPw) || !/[0-9]/.test(newPw) || !/[^A-Za-z0-9]/.test(newPw)) {
       statusEl.style.color = '#DC2626'; statusEl.textContent = '8자 이상, 대·소문자·숫자·특수문자를 모두 포함해야 합니다.'; return;
     }
@@ -448,10 +446,9 @@ async function boot() {
     btn.disabled = true; btn.textContent = '변경 중…';
     statusEl.textContent = '';
     try {
-      await API.changePassword(oldPw, newPw);
+      await API.changePassword(newPw);
       statusEl.style.color = 'var(--green)';
       statusEl.textContent = '비밀번호가 변경되었습니다.';
-      $('changePwOld').value = '';
       $('changePwNew').value = '';
       $('changePwConfirm').value = '';
     } catch (e) {
