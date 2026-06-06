@@ -400,11 +400,9 @@ async function boot() {
     $('generateSection').style.display = 'none';
     $('latestScheduleSection').style.display = 'none';
     $('result').style.display = 'none';
-    const justLoggedOut = localStorage.getItem('sikchung_logged_out');
-    if (justLoggedOut) {
-    } else if (window.Auth) {
+    if (!loggedOutFlag && window.Auth) {
       Auth.login();
-    } else {
+    } else if (!loggedOutFlag) {
       // 로그아웃 후 or 콜백 실패: 로그인 버튼만 표시 (자동 리다이렉트 없음)
       // 플래그는 storeTokens()(로그인 성공 시)에서 제거됨
       console.log('[boot] post-logout or failed callback → show login button only');
