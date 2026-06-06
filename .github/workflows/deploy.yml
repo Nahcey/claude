@@ -71,9 +71,22 @@ jobs:
         run: sam build
 
       # ── 8. SAM deploy ──────────────────────────────────────────────────────
+      # 기존 스택의 CloudFrontDomain 출력값을 조회해 CorsAllowOrigin으로 주입.
+      # 스택이 없거나 출력값이 없는 최초 배포 시에는 파라미터 없이 실행 → default "*".
       - name: SAM deploy
         working-directory: sikchung/infra
-        run: sam deploy
+        run: |
+          CF=$(aws cloudformation describe-stacks \
+            --stack-name sikchung \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDomain'].OutputValue" \
+            --output text 2>/dev/null || true)
+          if [ -n "$CF" ] && [ "$CF" != "None" ]; then
+            echo "CorsAllowOrigin=https://$CF"
+            sam deploy --parameter-overrides "CorsAllowOrigin=https://$CF"
+          else
+            echo "CloudFrontDomain 없음 (최초 배포) — CorsAllowOrigin default '*' 사용"
+            sam deploy
+          fi
 
       # ── 9. 스택 출력값 수집 ────────────────────────────────────────────────
       - name: Get stack outputs
