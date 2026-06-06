@@ -130,5 +130,36 @@
     if (expiry > Date.now()) _scheduleRefresh(expiry);
   })();
 
-  window.Auth = { login, logout, handleCallback, refreshTokens, getTokens, isLoggedIn };
+  // 현재 로그인된 사용자가 직접 비밀번호를 변경한다.
+  // Cognito ChangePassword API — AccessToken 기반, SRP 불필요.
+  async function changePassword(previousPassword, proposedPassword) {
+    const { cognitoDomain } = cfg();
+    const regionMatch = cognitoDomain && cognitoDomain.match(/\.auth\.([^.]+)\.amazoncognito\.com/);
+    if (!regionMatch) throw new Error('APP_CONFIG.cognitoDomain 형식 오류');
+    const region = regionMatch[1];
+    const { accessToken } = getTokens();
+    if (!accessToken) throw new Error('로그인 상태가 아닙니다.');
+    const res = await fetch(`https://cognito-idp.${region}.amazonaws.com/`, {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.ChangePassword',
+      },
+      body: JSON.stringify({
+        AccessToken:       accessToken,
+        PreviousPassword:  previousPassword,
+        ProposedPassword:  proposedPassword,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const type = data.__type || '';
+      if (type === 'NotAuthorizedException')   throw new Error('현재 비밀번호가 틀렸습니다.');
+      if (type === 'InvalidPasswordException') throw new Error('새 비밀번호가 정책을 위반합니다.');
+      if (type === 'LimitExceededException')   throw new Error('시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요.');
+      throw new Error(data.message || '비밀번호 변경 실패');
+    }
+  }
+
+  window.Auth = { login, logout, handleCallback, refreshTokens, getTokens, isLoggedIn, changePassword };
 })();

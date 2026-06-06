@@ -419,6 +419,48 @@ async function boot() {
   $('logoutBtn').addEventListener('click', () => {
     Auth.logout();
   });
+  $('changePwBtn').addEventListener('click', () => {
+    $('changePwOld').value = '';
+    $('changePwNew').value = '';
+    $('changePwConfirm').value = '';
+    $('changePwStatus').textContent = '';
+    $('changePwStatus').style.color = 'var(--muted)';
+    $('changePwOverlay').style.display = 'flex';
+  });
+  $('changePwClose').addEventListener('click',  () => { $('changePwOverlay').style.display = 'none'; });
+  $('changePwCancel').addEventListener('click', () => { $('changePwOverlay').style.display = 'none'; });
+  $('changePwOverlay').addEventListener('click', (e) => {
+    if (e.target === $('changePwOverlay')) $('changePwOverlay').style.display = 'none';
+  });
+  $('changePwSubmit').addEventListener('click', async () => {
+    const oldPw  = $('changePwOld').value;
+    const newPw  = $('changePwNew').value;
+    const confPw = $('changePwConfirm').value;
+    const statusEl = $('changePwStatus');
+
+    if (!oldPw || !newPw || !confPw) { statusEl.style.color = '#DC2626'; statusEl.textContent = '모든 칸을 입력하세요.'; return; }
+    if (newPw !== confPw)            { statusEl.style.color = '#DC2626'; statusEl.textContent = '새 비밀번호가 일치하지 않습니다.'; return; }
+    if (newPw.length < 8 || !/[A-Z]/.test(newPw) || !/[a-z]/.test(newPw) || !/[0-9]/.test(newPw) || !/[^A-Za-z0-9]/.test(newPw)) {
+      statusEl.style.color = '#DC2626'; statusEl.textContent = '8자 이상, 대·소문자·숫자·특수문자를 모두 포함해야 합니다.'; return;
+    }
+
+    const btn = $('changePwSubmit');
+    btn.disabled = true; btn.textContent = '변경 중…';
+    statusEl.textContent = '';
+    try {
+      await Auth.changePassword(oldPw, newPw);
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = '비밀번호가 변경되었습니다.';
+      $('changePwOld').value = '';
+      $('changePwNew').value = '';
+      $('changePwConfirm').value = '';
+    } catch (e) {
+      statusEl.style.color = '#DC2626';
+      statusEl.textContent = e.message;
+    } finally {
+      btn.disabled = false; btn.textContent = '변경';
+    }
+  });
   $('loginBtn').addEventListener('click', () => Auth.login());
   $('addRow').style.display = 'none'; // 인원 추가는 관리자 도구에서
 
