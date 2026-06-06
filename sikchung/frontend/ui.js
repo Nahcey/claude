@@ -296,34 +296,155 @@ function toggleEditMode() {
   if (lastResult) renderResult(lastResult);
 }
 
-// 선택된 슬롯과 (targetSlotIdx, targetPos) 사이 스왑이 제한사항을 만족하는지
-function isCompatibleSwap(targetSlotIdx, targetPos) {
-  if (!selectedSlot) return false;
-  if (selectedSlot.slotIdx === targetSlotIdx && selectedSlot.pos === targetPos) return false;
-  const aP = lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos];
-  const bP = lastResult.schedule[targetSlotIdx][targetPos];
-  // aP 가 target slot 에 들어갈 수 있어야 함 (요일 제한 + 같은 슬롯 중복 금지)
-  if (aP) {
-    if (aP.restricted[targetSlotIdx]) return false;
-    if (lastResult.schedule[targetSlotIdx].some((x, i) => x && x.id === aP.id && i !== targetPos)) return false;
+// ============================================================
+// 공통 스왑 엔진 팩토리 (일반 일정 + flex 공용)
+// ============================================================
+function createSwapEngine({
+  getSchedule, getSelection, setSelection, isEditMode,
+  capacityOf, canPlace, slotLabel, panelId,
+  afterMutation, rerender, chipDecorator,
+}) {
+  function isCompatibleSwap(targetSlotIdx, targetPos) {
+    const sel = getSelection();
+    if (!sel) return false;
+    const { slotIdx, pos } = sel;
+    if (slotIdx === targetSlotIdx && pos === targetPos) return false;
+    const sch = getSchedule();
+    const aP = sch[slotIdx][pos];
+    const bP = sch[targetSlotIdx][targetPos];
+    if (aP) {
+      if (!canPlace(aP, targetSlotIdx)) return false;
+      if (sch[targetSlotIdx].some((x, i) => x && x.id === aP.id && i !== targetPos)) return false;
+    }
+    if (bP) {
+      if (!canPlace(bP, slotIdx)) return false;
+      if (sch[slotIdx].some((x, i) => x && x.id === bP.id && i !== pos)) return false;
+    }
+    return true;
   }
-  // bP 가 selected slot 에 들어갈 수 있어야 함
-  if (bP) {
-    if (bP.restricted[selectedSlot.slotIdx]) return false;
-    if (lastResult.schedule[selectedSlot.slotIdx].some((x, i) => x && x.id === bP.id && i !== selectedSlot.pos)) return false;
-  }
-  return true;
-}
 
-function performSwap(targetSlotIdx, targetPos) {
-  if (!selectedSlot) return;
-  const a = lastResult.schedule[selectedSlot.slotIdx];
-  const b = lastResult.schedule[targetSlotIdx];
-  const tmp = a[selectedSlot.pos];
-  a[selectedSlot.pos] = b[targetPos];
-  b[targetPos] = tmp;
-  selectedSlot = null;
-  recomputeAndRender();
+  function performSwap(targetSlotIdx, targetPos) {
+    const sel = getSelection();
+    if (!sel) return;
+    const { slotIdx, pos } = sel;
+    const sch = getSchedule();
+    [sch[slotIdx][pos], sch[targetSlotIdx][targetPos]] = [sch[targetSlotIdx][targetPos], sch[slotIdx][pos]];
+    setSelection(null);
+    afterMutation();
+  }
+
+  function handleSlotClick(slotIdx, pos) {
+    if (!isEditMode()) return;
+    const sel = getSelection();
+    if (!sel) { setSelection({ slotIdx, pos }); rerender(); return; }
+    if (sel.slotIdx === slotIdx && sel.pos === pos) { setSelection(null); rerender(); return; }
+    if (isCompatibleSwap(slotIdx, pos)) performSwap(slotIdx, pos);
+    // 비호환 슬롯은 클릭 무시
+  }
+
+  function buildSlotPos(slotIdx, pos) {
+    const sch = getSchedule();
+    const sel = getSelection();
+    const p = sch[slotIdx][pos];
+    const el = document.createElement('span');
+    el.className = 'slot-pos';
+    if (p) {
+      el.classList.add('chip-wrap');
+      if (chipDecorator) chipDecorator(el, p);
+      el.appendChild(document.createTextNode(p.name));
+    } else {
+      el.classList.add('empty-pos');
+      el.appendChild(document.createTextNode('미배정'));
+    }
+    if (sel) {
+      if (sel.slotIdx === slotIdx && sel.pos === pos) el.classList.add('selected');
+      else if (isCompatibleSwap(slotIdx, pos))        el.classList.add('swap-ok');
+      else                                             el.classList.add('swap-bad');
+    }
+    el.addEventListener('click', () => handleSlotClick(slotIdx, pos));
+    return el;
+  }
+
+  function renderEditPanel() {
+    const panel = $(panelId);
+    if (!panel) return;
+    const sel = getSelection();
+    if (!isEditMode() || !sel) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+    panel.style.display = ''; panel.innerHTML = '';
+
+    const { slotIdx, pos } = sel;
+    const sch = getSchedule();
+    const currentP = sch[slotIdx][pos];
+
+    const header = document.createElement('div');
+    header.className = 'edit-panel-header';
+    header.textContent = `${slotLabel(slotIdx)} 슬롯 ${pos + 1} 편집 — 현재: ${currentP ? currentP.name : '미배정'}`;
+    panel.appendChild(header);
+
+    const help = document.createElement('div');
+    help.className = 'edit-panel-help';
+    help.textContent = '· 아래 인원을 누르면 이 자리에 배정됩니다.   · 일정 표의 초록 테두리 슬롯을 누르면 스왑.';
+    panel.appendChild(help);
+
+    if (currentP) {
+      const remRow = document.createElement('div');
+      remRow.style.marginBottom = '8px';
+      const rem = document.createElement('button');
+      rem.className = 'btn';
+      rem.style.cssText = 'background:#FEE2E2;color:var(--red);padding:6px 12px;font-weight:500;font-size:13px;';
+      rem.textContent = '✕ ' + currentP.name + ' 제거';
+      rem.addEventListener('click', () => {
+        sch[slotIdx][pos] = null;
+        setSelection(null);
+        afterMutation();
+      });
+      remRow.appendChild(rem);
+      panel.appendChild(remRow);
+    }
+
+    const candLabel = document.createElement('div');
+    candLabel.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:6px;';
+    candLabel.textContent = '이 자리에 넣을 수 있는 인원';
+    panel.appendChild(candLabel);
+
+    const list = document.createElement('div');
+    list.className = 'edit-candidates';
+    const cands = people.filter(p =>
+      canPlace(p, slotIdx) &&
+      (!currentP || p.id !== currentP.id) &&
+      !sch[slotIdx].some((x, i) => x && x.id === p.id && i !== pos)
+    );
+    if (!cands.length) {
+      const none = document.createElement('div');
+      none.style.cssText = 'color:var(--muted);font-size:12px;';
+      none.textContent = '가능한 인원이 없습니다.';
+      list.appendChild(none);
+    } else {
+      for (const p of cands) {
+        const chip = document.createElement('button');
+        chip.className = 'cand-chip';
+        chip.textContent = p.name;
+        chip.addEventListener('click', () => {
+          sch[slotIdx][pos] = p;
+          setSelection(null);
+          afterMutation();
+        });
+        list.appendChild(chip);
+      }
+    }
+    panel.appendChild(list);
+
+    const actions = document.createElement('div');
+    actions.className = 'edit-panel-actions';
+    const cancel = document.createElement('button');
+    cancel.className = 'btn btn-secondary';
+    cancel.textContent = '선택 취소';
+    cancel.addEventListener('click', () => { setSelection(null); rerender(); });
+    actions.appendChild(cancel);
+    panel.appendChild(actions);
+  }
+
+  return { isCompatibleSwap, performSwap, handleSlotClick, buildSlotPos, renderEditPanel };
 }
 
 function recomputeStats() {
@@ -342,104 +463,22 @@ function recomputeAndRender() {
   renderResult(lastResult);
 }
 
-function handleSlotClick(slotIdx, pos) {
-  if (!editMode) return;
-  if (!selectedSlot) {
-    selectedSlot = { slotIdx, pos };
-    renderResult(lastResult);
-    return;
-  }
-  if (selectedSlot.slotIdx === slotIdx && selectedSlot.pos === pos) {
-    selectedSlot = null;
-    renderResult(lastResult);
-    return;
-  }
-  if (isCompatibleSwap(slotIdx, pos)) {
-    performSwap(slotIdx, pos);
-  }
-  // 비호환(swap-bad) 슬롯은 클릭 무시
-}
-
-function renderEditPanel() {
-  const panel = $('editPanel');
-  if (!panel) return;
-  if (!editMode || !selectedSlot) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
-  panel.style.display = '';
-  panel.innerHTML = '';
-
-  const ts = TIME_SLOTS[selectedSlot.slotIdx];
-  const currentP = lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos];
-
-  const header = document.createElement('div');
-  header.className = 'edit-panel-header';
-  header.textContent = `${ts.label} 슬롯 ${selectedSlot.pos + 1} 편집 — 현재: ${currentP ? currentP.name : '미배정'}`;
-  panel.appendChild(header);
-
-  const help = document.createElement('div');
-  help.className = 'edit-panel-help';
-  help.textContent = '· 아래 인원을 누르면 이 자리에 배정됩니다.   · 일정 표의 초록 테두리 슬롯을 누르면 스왑.';
-  panel.appendChild(help);
-
-  // 제거 버튼 (배정된 슬롯에만)
-  if (currentP) {
-    const remRow = document.createElement('div');
-    remRow.style.marginBottom = '8px';
-    const rem = document.createElement('button');
-    rem.className = 'btn';
-    rem.style.cssText = 'background:#FEE2E2;color:var(--red);padding:6px 12px;font-weight:500;font-size:13px;';
-    rem.textContent = '✕ ' + currentP.name + ' 제거';
-    rem.addEventListener('click', () => {
-      lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos] = null;
-      selectedSlot = null;
-      recomputeAndRender();
-    });
-    remRow.appendChild(rem);
-    panel.appendChild(remRow);
-  }
-
-  // 후보 목록 — 그 슬롯에 제한 없는 인원, 같은 슬롯 다른 칸 중복 제외, 현재 인물 제외
-  const candLabel = document.createElement('div');
-  candLabel.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:6px;';
-  candLabel.textContent = '이 자리에 넣을 수 있는 인원 (요일 제한 없음)';
-  panel.appendChild(candLabel);
-
-  const list = document.createElement('div');
-  list.className = 'edit-candidates';
-  const cands = people.filter(p =>
-    !p.restricted[selectedSlot.slotIdx] &&
-    (!currentP || p.id !== currentP.id) &&
-    !lastResult.schedule[selectedSlot.slotIdx].some((x, i) => x && x.id === p.id && i !== selectedSlot.pos)
-  );
-  if (cands.length === 0) {
-    const none = document.createElement('div');
-    none.style.cssText = 'color:var(--muted);font-size:12px;';
-    none.textContent = '가능한 인원이 없습니다.';
-    list.appendChild(none);
-  } else {
-    for (const p of cands) {
-      const chip = document.createElement('button');
-      chip.className = 'cand-chip';
-      chip.textContent = p.name;
-      chip.addEventListener('click', () => {
-        lastResult.schedule[selectedSlot.slotIdx][selectedSlot.pos] = p;
-        selectedSlot = null;
-        recomputeAndRender();
-      });
-      list.appendChild(chip);
-    }
-  }
-  panel.appendChild(list);
-
-  // 선택 취소
-  const actions = document.createElement('div');
-  actions.className = 'edit-panel-actions';
-  const cancel = document.createElement('button');
-  cancel.className = 'btn btn-secondary';
-  cancel.textContent = '선택 취소';
-  cancel.addEventListener('click', () => { selectedSlot = null; renderResult(lastResult); });
-  actions.appendChild(cancel);
-  panel.appendChild(actions);
-}
+const _swapEngine = createSwapEngine({
+  getSchedule:   () => lastResult.schedule,
+  getSelection:  () => selectedSlot,
+  setSelection:  (s) => { selectedSlot = s; },
+  isEditMode:    () => editMode,
+  capacityOf:    () => SLOTS_PER_DAY,
+  canPlace:      (p, s) => !p.restricted[s],
+  slotLabel:     (s) => TIME_SLOTS[s].label,
+  panelId:       'editPanel',
+  afterMutation: recomputeAndRender,
+  rerender:      () => renderResult(lastResult),
+  chipDecorator: (el, p) => {
+    const cnt = (lastResult.assignCount && lastResult.assignCount.get(p.id)) || 0;
+    if (p.double && cnt >= 3) el.classList.add('crossover');
+  },
+});
 
 // 한 (요일, 시간대) 셀 — 슬롯 인덱스가 -1 이면 "—" (해당 시간대 없음, 토/일 아침 칸)
 function buildShiftCell(slotIdx, r, trueCrossover) {
@@ -461,7 +500,7 @@ function buildShiftCell(slotIdx, r, trueCrossover) {
   if (editMode) {
     // 편집 모드: 슬롯 position 별로 클릭 가능한 .slot-pos 요소 렌더
     for (let pos = 0; pos < SLOTS_PER_DAY; pos++) {
-      wrap.appendChild(buildSlotPos(slotIdx, pos, r));
+      wrap.appendChild(_swapEngine.buildSlotPos(slotIdx, pos));
     }
   } else {
     // 보기 모드: 기존 통합 렌더 (chip + 미배정 블록 + 가능 인원 목록)
@@ -501,33 +540,6 @@ function buildShiftCell(slotIdx, r, trueCrossover) {
   return td;
 }
 
-// 편집 모드용 — 슬롯 position 1칸 (클릭 가능 + 선택/스왑 가능 테두리 표시)
-function buildSlotPos(slotIdx, pos, r) {
-  const p = lastResult.schedule[slotIdx][pos];
-  const el = document.createElement('span');
-  el.className = 'slot-pos';
-  if (p) {
-    el.classList.add('chip-wrap');
-    const cnt = r.assignCount.get(p.id) || 0;
-    if (!!p.double && cnt >= 3) el.classList.add('crossover');
-    el.appendChild(document.createTextNode(p.name));
-  } else {
-    el.classList.add('empty-pos');
-    el.appendChild(document.createTextNode('미배정'));
-  }
-  // 선택 / 스왑 가능 / 스왑 불가 테두리
-  if (selectedSlot) {
-    if (selectedSlot.slotIdx === slotIdx && selectedSlot.pos === pos) {
-      el.classList.add('selected');
-    } else if (isCompatibleSwap(slotIdx, pos)) {
-      el.classList.add('swap-ok');
-    } else {
-      el.classList.add('swap-bad');
-    }
-  }
-  el.addEventListener('click', () => handleSlotClick(slotIdx, pos));
-  return el;
-}
 
 function renderResult(r) {
   $('result').style.display = '';
@@ -657,7 +669,7 @@ function renderResult(r) {
   }
 
   // 편집 모드 패널
-  renderEditPanel();
+  _swapEngine.renderEditPanel();
 
   // 결과 영역으로 스크롤 (편집 중에는 스크롤 점프 안 함)
   if (!editMode) $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });

@@ -96,141 +96,18 @@ function _recomputeFlexShortage() {
   _flexState.shortage = shortage;
 }
 
-function _isFlexCompatibleSwap(targetSlotIdx, targetPos) {
-  if (!_flexSelectedSlot) return false;
-  const { slotIdx, pos } = _flexSelectedSlot;
-  if (slotIdx === targetSlotIdx && pos === targetPos) return false;
-  const aP = _flexState.schedule[slotIdx][pos];
-  const bP = _flexState.schedule[targetSlotIdx][targetPos];
-  if (aP && _flexState.schedule[targetSlotIdx].some((x, i) => x && x.id === aP.id && i !== targetPos)) return false;
-  if (bP && _flexState.schedule[slotIdx].some((x, i) => x && x.id === bP.id && i !== pos)) return false;
-  return true;
-}
-
-function _performFlexSwap(targetSlotIdx, targetPos) {
-  if (!_flexSelectedSlot) return;
-  const { slotIdx, pos } = _flexSelectedSlot;
-  const a = _flexState.schedule[slotIdx];
-  const b = _flexState.schedule[targetSlotIdx];
-  [a[pos], b[targetPos]] = [b[targetPos], a[pos]];
-  _flexSelectedSlot = null;
-  _recomputeFlexShortage();
-  _renderFlexTable();
-}
-
-function _handleFlexSlotClick(slotIdx, pos) {
-  if (!_flexEditMode) return;
-  if (!_flexSelectedSlot) {
-    _flexSelectedSlot = { slotIdx, pos };
-    _renderFlexTable();
-    return;
-  }
-  if (_flexSelectedSlot.slotIdx === slotIdx && _flexSelectedSlot.pos === pos) {
-    _flexSelectedSlot = null;
-    _renderFlexTable();
-    return;
-  }
-  if (_isFlexCompatibleSwap(slotIdx, pos)) _performFlexSwap(slotIdx, pos);
-}
-
-function _buildFlexSlotPos(slotIdx, pos) {
-  const p = _flexState.schedule[slotIdx][pos];
-  const el = document.createElement('span');
-  el.className = 'slot-pos';
-  if (p) { el.classList.add('chip-wrap'); el.textContent = p.name; }
-  else   { el.classList.add('empty-pos'); el.textContent = '미배정'; }
-  if (_flexSelectedSlot) {
-    if (_flexSelectedSlot.slotIdx === slotIdx && _flexSelectedSlot.pos === pos)
-      el.classList.add('selected');
-    else if (_isFlexCompatibleSwap(slotIdx, pos))
-      el.classList.add('swap-ok');
-    else
-      el.classList.add('swap-bad');
-  }
-  el.addEventListener('click', () => _handleFlexSlotClick(slotIdx, pos));
-  return el;
-}
-
-function _renderFlexEditPanel() {
-  const panel = $('flexEditPanel');
-  if (!panel) return;
-  if (!_flexEditMode || !_flexSelectedSlot) {
-    panel.style.display = 'none'; panel.innerHTML = ''; return;
-  }
-  panel.style.display = ''; panel.innerHTML = '';
-
-  const { slotIdx, pos } = _flexSelectedSlot;
-  const currentP = _flexState.schedule[slotIdx][pos];
-  const label = _FLEX_DAYS[Math.floor(slotIdx / 3)] + ' ' + _FLEX_SHIFTS[slotIdx % 3];
-
-  const header = document.createElement('div');
-  header.className = 'edit-panel-header';
-  header.textContent = `${label} 슬롯 ${pos + 1} 편집 — 현재: ${currentP ? currentP.name : '미배정'}`;
-  panel.appendChild(header);
-
-  const help = document.createElement('div');
-  help.className = 'edit-panel-help';
-  help.textContent = '· 아래 인원을 누르면 이 자리에 배정됩니다.   · 일정 표의 초록 테두리 슬롯을 누르면 스왑.';
-  panel.appendChild(help);
-
-  if (currentP) {
-    const remRow = document.createElement('div');
-    remRow.style.marginBottom = '8px';
-    const rem = document.createElement('button');
-    rem.className = 'btn';
-    rem.style.cssText = 'background:#FEE2E2;color:var(--red);padding:6px 12px;font-weight:500;font-size:13px;';
-    rem.textContent = '✕ ' + currentP.name + ' 제거';
-    rem.addEventListener('click', () => {
-      _flexState.schedule[slotIdx][pos] = null;
-      _flexSelectedSlot = null;
-      _recomputeFlexShortage();
-      _renderFlexTable();
-    });
-    remRow.appendChild(rem);
-    panel.appendChild(remRow);
-  }
-
-  const candLabel = document.createElement('div');
-  candLabel.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:6px;';
-  candLabel.textContent = '이 자리에 넣을 수 있는 인원';
-  panel.appendChild(candLabel);
-
-  const list = document.createElement('div');
-  list.className = 'edit-candidates';
-  const cands = people.filter(p =>
-    (!currentP || p.id !== currentP.id) &&
-    !_flexState.schedule[slotIdx].some((x, i) => x && x.id === p.id && i !== pos)
-  );
-  if (!cands.length) {
-    const none = document.createElement('div');
-    none.style.cssText = 'color:var(--muted);font-size:12px;';
-    none.textContent = '가능한 인원이 없습니다.';
-    list.appendChild(none);
-  } else {
-    for (const p of cands) {
-      const chip = document.createElement('button');
-      chip.className = 'cand-chip';
-      chip.textContent = p.name;
-      chip.addEventListener('click', () => {
-        _flexState.schedule[slotIdx][pos] = p;
-        _flexSelectedSlot = null;
-        _recomputeFlexShortage();
-        _renderFlexTable();
-      });
-      list.appendChild(chip);
-    }
-  }
-  panel.appendChild(list);
-
-  const actions = document.createElement('div');
-  actions.className = 'edit-panel-actions';
-  const cancel = document.createElement('button');
-  cancel.className = 'btn btn-secondary';
-  cancel.textContent = '선택 취소';
-  cancel.addEventListener('click', () => { _flexSelectedSlot = null; _renderFlexTable(); });
-  actions.appendChild(cancel);
-  panel.appendChild(actions);
-}
+const _flexEngine = createSwapEngine({
+  getSchedule:   () => _flexState.schedule,
+  getSelection:  () => _flexSelectedSlot,
+  setSelection:  (s) => { _flexSelectedSlot = s; },
+  isEditMode:    () => _flexEditMode,
+  capacityOf:    (s) => _flexState.demand[s],
+  canPlace:      () => true,
+  slotLabel:     (s) => _FLEX_DAYS[Math.floor(s / 3)] + ' ' + _FLEX_SHIFTS[s % 3],
+  panelId:       'flexEditPanel',
+  afterMutation: () => { _recomputeFlexShortage(); _renderFlexTable(); },
+  rerender:      () => _renderFlexTable(),
+});
 
 function _renderFlexTable() {
   if (!_flexState) return;
@@ -261,7 +138,7 @@ function _renderFlexTable() {
         const wrap = document.createElement('div');
         wrap.className = 'cell-chips';
         if (_flexEditMode) {
-          for (let pos = 0; pos < d_s; pos++) wrap.appendChild(_buildFlexSlotPos(s, pos));
+          for (let pos = 0; pos < d_s; pos++) wrap.appendChild(_flexEngine.buildSlotPos(s, pos));
         } else {
           const names = slot.filter(Boolean).map(p => p.name);
           if (names.length) {
@@ -306,7 +183,7 @@ function _renderFlexTable() {
     summaryEl.appendChild(sp2);
   }
 
-  _renderFlexEditPanel();
+  _flexEngine.renderEditPanel();
 }
 
 function _toggleFlexEditMode() {
