@@ -1,0 +1,102 @@
+name: Deploy Sikchung Backend (OIDC + single ECR repo)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'sikchung/backend/**'
+      - 'sikchung/infra/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC 필수
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPO: sikchung
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. AWS credentials (OIDC) ──────────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+
+      # ── 3. ACCOUNT_ID 추출 (ARN/URI 하드코딩 금지) ────────────────────────
+      - name: Resolve account ID
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
+
+      # ── 4. ECR repo ensure + lifecycle policy (멱등) ───────────────────────
+      - name: Ensure ECR repository
+        run: |
+          if ! aws ecr describe-repositories --repository-names "$ECR_REPO" >/dev/null 2>&1; then
+            echo "ECR repo '$ECR_REPO' 없음 — 생성"
+            aws ecr create-repository --repository-name "$ECR_REPO" >/dev/null
+          else
+            echo "ECR repo '$ECR_REPO' 존재"
+          fi
+          # untagged 이미지를 push 1일 후 expire (멱등 적용)
+          aws ecr put-lifecycle-policy \
+            --repository-name "$ECR_REPO" \
+            --lifecycle-policy-text '{
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Expire untagged images after 1 day",
+                  "selection": {
+                    "tagStatus": "untagged",
+                    "countType": "sinceImagePushed",
+                    "countUnit": "days",
+                    "countNumber": 1
+                  },
+                  "action": { "type": "expire" }
+                }
+              ]
+            }' >/dev/null
+          echo "lifecycle policy 적용 완료"
+
+      # ── 4.5. ECR 로그인 (sam deploy의 docker push 인증 보장) ──────────────
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── 4.6. QEMU + Buildx (arm64 컨테이너 이미지 빌드용) ──────────────────
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── 5. SAM CLI ─────────────────────────────────────────────────────────
+      - name: Setup SAM
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      # ── 6. SAM build ───────────────────────────────────────────────────────
+      - name: SAM build
+        working-directory: sikchung/infra
+        run: sam build -t template.yaml
+
+      # ── 7. SAM deploy (단일 repo로 모든 Image 함수 push → 레이어 dedup) ────
+      - name: SAM deploy
+        working-directory: sikchung/infra
+        run: |
+          sam deploy \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --image-repository "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
