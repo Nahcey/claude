@@ -7,6 +7,7 @@ on:
     paths:
       - 'sikchung/backend/**'
       - 'sikchung/infra/**'
+      - 'sikchung/frontend/**'
       - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
 
@@ -100,3 +101,73 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --image-repository "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
+
+      # ── 8. 스택 출력값 수집 (기존 deploy.yml에서 이전) ─────────────────────
+      - name: Get stack outputs
+        id: outputs
+        run: |
+          aws cloudformation describe-stacks --stack-name sikchung --query 'Stacks[0].Outputs' --output json > outputs.json
+          echo "cf_domain=$(jq -r '.[] | select(.OutputKey=="CloudFrontDomain") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
+          echo "dist_id=$(jq -r '.[] | select(.OutputKey=="CloudFrontDistributionId") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
+          echo "s3_bucket=$(jq -r '.[] | select(.OutputKey=="FrontendBucketName") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
+          echo "user_pool_id=$(jq -r '.[] | select(.OutputKey=="UserPoolId") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
+          echo "client_id=$(jq -r '.[] | select(.OutputKey=="ClientId") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
+          echo "cognito_domain=$(jq -r '.[] | select(.OutputKey=="CognitoDomain") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
+          echo "api_endpoint=$(jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue' outputs.json)" >> $GITHUB_OUTPUT
+
+      # ── 9. Cognito 콜백/로그아웃 URL 을 CloudFront 도메인으로 업데이트 ─────
+      # update-user-pool-client 는 전체 교체이므로 OAuth 설정도 함께 명시.
+      - name: Update Cognito callback URLs
+        run: |
+          aws cognito-idp update-user-pool-client \
+            --user-pool-id "${{ steps.outputs.outputs.user_pool_id }}" \
+            --client-id    "${{ steps.outputs.outputs.client_id }}" \
+            --callback-urls "https://${{ steps.outputs.outputs.cf_domain }}/" \
+            --logout-urls   "https://${{ steps.outputs.outputs.cf_domain }}/" \
+            --allowed-o-auth-flows code \
+            --allowed-o-auth-scopes openid email profile \
+            --allowed-o-auth-flows-user-pool-client \
+            --supported-identity-providers COGNITO
+
+      # ── 10. frontend/config.js 자동 생성 ───────────────────────────────────
+      # 새 명명규약(cognitoUserPoolId 등) + auth.js 호환 별칭(clientId, redirectUri)
+      - name: Generate frontend config
+        run: |
+          cat > sikchung/frontend/config.js <<EOF
+          window.APP_CONFIG = {
+            apiEndpoint:       '${{ steps.outputs.outputs.api_endpoint }}',
+            cognitoUserPoolId: '${{ steps.outputs.outputs.user_pool_id }}',
+            cognitoClientId:   '${{ steps.outputs.outputs.client_id }}',
+            cognitoDomain:     '${{ steps.outputs.outputs.cognito_domain }}',
+            cloudfrontDomain:  '${{ steps.outputs.outputs.cf_domain }}',
+            region:            'ap-northeast-2',
+            // auth.js 호환 별칭
+            clientId:          '${{ steps.outputs.outputs.client_id }}',
+            redirectUri:       'https://${{ steps.outputs.outputs.cf_domain }}/',
+          };
+          EOF
+
+      # ── 11. 프론트엔드를 S3 로 sync ────────────────────────────────────────
+      - name: Sync frontend to S3
+        run: aws s3 sync sikchung/frontend/ s3://${{ steps.outputs.outputs.s3_bucket }}/ --delete
+
+      # ── 12. CloudFront 캐시 무효화 ─────────────────────────────────────────
+      - name: Invalidate CloudFront
+        run: aws cloudfront create-invalidation --distribution-id ${{ steps.outputs.outputs.dist_id }} --paths "/*"
+
+      # ── 13. 배포 URL + 스택 출력값 → Job Summary ───────────────────────────
+      - name: Output deployment summary
+        run: |
+          echo "=== Deployed ==="
+          echo "URL: https://${{ steps.outputs.outputs.cf_domain }}"
+          {
+            echo "## 배포 완료"
+            echo ""
+            echo "**URL**: <https://${{ steps.outputs.outputs.cf_domain }}>"
+            echo ""
+            echo "## 스택 출력값"
+            echo ""
+            echo "| Key | Value |"
+            echo "|-----|-------|"
+            jq -r '.[] | "| " + .OutputKey + " | `" + .OutputValue + "` |"' outputs.json
+          } >> $GITHUB_STEP_SUMMARY
