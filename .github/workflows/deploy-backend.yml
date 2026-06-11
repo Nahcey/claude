@@ -21,16 +21,17 @@ env:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # arm64 네이티브 러너 — Image Lambda(arm64)를 QEMU 없이 그대로 빌드
+    runs-on: ubuntu-24.04-arm
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────────────────────
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
 
       # ── 2. AWS credentials (OIDC) ──────────────────────────────────────────
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b  # v6.2.0
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -73,18 +74,11 @@ jobs:
 
       # ── 4.5. ECR 로그인 (sam deploy의 docker push 인증 보장) ──────────────
       - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      # ── 4.6. QEMU + Buildx (arm64 컨테이너 이미지 빌드용) ──────────────────
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419  # v2.1.5
 
       # ── 5. SAM CLI ─────────────────────────────────────────────────────────
       - name: Setup SAM
-        uses: aws-actions/setup-sam@v2
+        uses: aws-actions/setup-sam@f84ec7d548307efafe33230528756de3c5841a17  # v2
         with:
           use-installer: true
 
