@@ -40,7 +40,7 @@ function normalizePerson(p) {
     restricted: migrateRestricted(p.restricted),
     double: !!p.double,
     priority: Number.isFinite(p.priority) ? Math.max(0, Math.min(99, p.priority)) : 0,
-    group: (['A','B','C','D','E'].includes(p.group)) ? p.group : (DEFAULT_GROUPS[p.name] || null),
+    group: (['A','B','C','D','E'].includes(p.group)) ? p.group : null,
     rookie: !!p.rookie,
     excluded: !!p.excluded,
   };
@@ -67,16 +67,6 @@ function uid() { return nextId++; }
 // 초기 인원 세팅
 // ============================================================
 function initPeople() {
-  // 표시 순서대로 N~1 우선순위 부여 (앞쪽일수록 높은 우선순위).
-  // 슬롯 초과 시 앞쪽 인원부터 먼저 제외됨.
-  people = DEFAULT_NAMES.map((name, i) => ({
-    id: uid(),
-    name,
-    restricted: defaultRestrictedFor(name),
-    double: false, // index2 디폴트: 주 2회 OFF
-    priority: DEFAULT_NAMES.length - i,
-    group: DEFAULT_GROUPS[name] || null,
-    excluded: false,
-    rookie: false
-  }));
+  // 인원은 서버에서만 로드 (로그인 필수) — 로컬 초기 명단 없음
+  people = [];
 }

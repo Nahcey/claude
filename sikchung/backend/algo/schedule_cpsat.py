@@ -36,8 +36,8 @@ def _pair_preference(a, b):
 
 
 def generate_schedule(eligible):
-    # ── [진단] 입력 덤프 ──────────────────────────────────────────────────────
-    print(f'[input] {json.dumps(eligible, ensure_ascii=False)}', file=sys.stderr)
+    # ── [진단] 입력 크기만 기록 (실명 PII는 CloudWatch에 남기지 않음) ─────────
+    print(f'[input] {len(eligible)} people', file=sys.stderr)
 
     skip_result = apply_skip_priority(eligible)
     active  = skip_result['active']
