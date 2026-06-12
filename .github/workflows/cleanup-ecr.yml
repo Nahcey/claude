@@ -1,0 +1,52 @@
+name: Cleanup old ECR repository
+
+# 옛 함수별 ECR repo(resolve_image_repos가 만든 것) 1개를 지정 삭제.
+# 와일드카드/일괄 삭제 금지 — 입력된 repo 하나만 지운다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_name:
+        description: '삭제할 옛 ECR repo 이름 (현행 repo "sikchung"은 거부됨)'
+        required: true
+        type: string
+
+permissions:
+  id-token: write   # OIDC 필수
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 안전장치: 현행 repo 보호 ───────────────────────────────────────────
+      - name: Guard current repo
+        env:
+          REPO_NAME: ${{ inputs.repo_name }}
+        run: |
+          if [ "$REPO_NAME" = "sikchung" ]; then
+            echo "::error::현행 repo 'sikchung'은 삭제할 수 없습니다."
+            exit 1
+          fi
+          echo "삭제 대상: $REPO_NAME"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b  # v6.2.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+
+      # ── 입력된 repo 한 개만 삭제 ──────────────────────────────────────────
+      - name: Delete ECR repository
+        env:
+          REPO_NAME: ${{ inputs.repo_name }}
+        run: |
+          aws ecr delete-repository \
+            --repository-name "$REPO_NAME" \
+            --force
+          echo "삭제 완료: $REPO_NAME"
