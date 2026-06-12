@@ -115,6 +115,8 @@ Resources:
 
   SikchungDataTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !If [IsProdStack, SikchungData, !Sub "${AWS::StackName}-data"]
       BillingMode: PAY_PER_REQUEST
@@ -128,6 +130,8 @@ Resources:
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
 
   # ── HTTP API Gateway ───────────────────────────────────────────────────────
 
