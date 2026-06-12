@@ -13,7 +13,6 @@ const { writeAudit }                                 = require('../lib/audit');
 exports.handler = async (event) => {
   try {
     const method = event.requestContext.http.method;
-    if (method === 'OPTIONS') return ok({});
 
     const auth = authorize(event, 'leader');
     if (!auth.ok) {

@@ -1,6 +1,6 @@
 'use strict';
 // [공용] 도메인 상수 + DOM 유틸. (전역 공유; classic script)
-// 로드 순서상 가장 먼저 → schedule-algo.js / people-store.js / ui.js / main.js 가 참조.
+// 로드 순서상 가장 먼저 → people-store.js / ui.js / main.js 가 참조.
 
 // 시간 슬롯 — 월~금은 아침/저녁 분리, 토·일은 단일 슬롯 (총 12개)
 const TIME_SLOTS = [

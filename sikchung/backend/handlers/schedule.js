@@ -15,7 +15,6 @@ const WEEK_ID_RE = /^\d{4}-\d{2}$/;
 exports.handler = async (event) => {
   try {
     const method = event.requestContext.http.method;
-    if (method === 'OPTIONS') return ok({});
 
     // ── POST /schedule ────────────────────────────────────────────────────────
     if (method === 'POST') {

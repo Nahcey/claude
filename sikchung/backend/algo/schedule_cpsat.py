@@ -116,20 +116,6 @@ def generate_schedule(eligible):
     for i in range(m):
         model.AddMaxEquality(has_wk[i], [x[i][s] for s in WEEKEND_SLOTS])
 
-    # unit_v[i] = weekday_slots×1 + weekend_slots×2  (평일 아침·저녁 각 1, 주말 각 2)
-    #   max = (SLOTS_COUNT - 주말슬롯수)×1 + 주말슬롯수×2 = 10 + 4 = 14
-    unit_v = [model.NewIntVar(0, (SLOTS_COUNT - len(WEEKEND_SLOTS)) + 2 * len(WEEKEND_SLOTS), f'unit{i}')
-              for i in range(m)]
-    for i in range(m):
-        model.Add(unit_v[i] == sum(x[i][s] for s in range(SLOTS_COUNT) if s not in WEEKEND_SLOTS)
-                              + 2 * sum(x[i][s] for s in WEEKEND_SLOTS))
-
-    # is_dbl[i] = unit_v[i] >= 2
-    is_dbl = [model.NewBoolVar(f'isdbl{i}') for i in range(m)]
-    for i in range(m):
-        model.Add(unit_v[i] >= 2).OnlyEnforceIf(is_dbl[i])
-        model.Add(unit_v[i] <= 1).OnlyEnforceIf(is_dbl[i].Not())
-
     # has_wd[i] = OR over weekday slots
     has_wd = [model.NewBoolVar(f'haswd{i}') for i in range(m)]
     for i in range(m):
