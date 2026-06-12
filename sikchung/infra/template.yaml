@@ -205,6 +205,7 @@ Resources:
                 - dynamodb:Query      # listMembers
                 - dynamodb:GetItem    # getMember (존재 확인 후 수정)
                 - dynamodb:UpdateItem # updateMember
+                - dynamodb:PutItem    # writeAudit (MEMBER_UPDATE)
               Resource: !GetAtt SikchungDataTable.Arn
 
   ScheduleFunction:
