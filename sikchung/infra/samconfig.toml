@@ -14,3 +14,15 @@ capabilities       = "CAPABILITY_IAM"
 region             = "ap-northeast-2"
 no_confirm_changeset       = true
 no_fail_on_empty_changeset = true
+
+[dev.global.parameters]
+region = "ap-northeast-2"
+
+[dev.deploy.parameters]
+stack_name                 = "sikchung-dev"
+resolve_s3                 = true
+capabilities               = "CAPABILITY_IAM"
+region                     = "ap-northeast-2"
+no_confirm_changeset       = true
+no_fail_on_empty_changeset = true
+# NOTE: 이미지 함수 2개는 배포 시 --image-repository(기존 ECR 재사용 가능) 지정 필요

@@ -11,6 +11,11 @@ Parameters:
       최초 배포: default "*".
       이후: deploy.yml이 기존 CloudFrontDomain 출력값을 읽어 "https://CF_DOMAIN" 주입.
 
+# prod(스택명 sikchung)는 기존 물리 이름 그대로 유지 — 변경 시 테이블/버킷/도메인
+# 교체(replace)로 데이터 유실. 그 외 스택(sikchung-dev 등)만 스택명 기반 이름 사용.
+Conditions:
+  IsProdStack: !Equals [!Ref "AWS::StackName", "sikchung"]
+
 Globals:
   Function:
     Timeout: 10
@@ -101,14 +106,17 @@ Resources:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
       UserPoolId: !Ref UserPool
-      Domain: !Sub "sikchung-auth-${AWS::AccountId}"
+      Domain: !If
+        - IsProdStack
+        - !Sub "sikchung-auth-${AWS::AccountId}"
+        - !Sub "${AWS::StackName}-auth-${AWS::AccountId}"
 
   # ── DynamoDB ───────────────────────────────────────────────────────────────
 
   SikchungDataTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: SikchungData
+      TableName: !If [IsProdStack, SikchungData, !Sub "${AWS::StackName}-data"]
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: PK
@@ -387,7 +395,10 @@ Resources:
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "sikchung-frontend-${AWS::AccountId}"
+      BucketName: !If
+        - IsProdStack
+        - !Sub "sikchung-frontend-${AWS::AccountId}"
+        - !Sub "${AWS::StackName}-frontend-${AWS::AccountId}"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         IgnorePublicAcls: true
@@ -402,7 +413,10 @@ Resources:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: !Sub "sikchung-oac-${AWS::AccountId}"
+        Name: !If
+          - IsProdStack
+          - !Sub "sikchung-oac-${AWS::AccountId}"
+          - !Sub "${AWS::StackName}-oac-${AWS::AccountId}"
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
@@ -413,7 +427,10 @@ Resources:
     Type: AWS::CloudFront::CachePolicy
     Properties:
       CachePolicyConfig:
-        Name: !Sub "sikchung-html-${AWS::AccountId}"
+        Name: !If
+          - IsProdStack
+          - !Sub "sikchung-html-${AWS::AccountId}"
+          - !Sub "${AWS::StackName}-html-${AWS::AccountId}"
         Comment: HTML — 60s TTL (배포 후 빠른 반영)
         DefaultTTL: 60
         MinTTL: 0
@@ -429,7 +446,10 @@ Resources:
     Type: AWS::CloudFront::CachePolicy
     Properties:
       CachePolicyConfig:
-        Name: !Sub "sikchung-assets-${AWS::AccountId}"
+        Name: !If
+          - IsProdStack
+          - !Sub "sikchung-assets-${AWS::AccountId}"
+          - !Sub "${AWS::StackName}-assets-${AWS::AccountId}"
         Comment: JS/CSS — 1 day TTL
         DefaultTTL: 86400
         MinTTL: 0
@@ -519,46 +539,46 @@ Outputs:
     Description: Cognito User Pool ID
     Value: !Ref UserPool
     Export:
-      Name: SikchungUserPoolId
+      Name: !Sub "${AWS::StackName}-UserPoolId"
 
   ClientId:
     Description: Cognito App Client ID
     Value: !Ref UserPoolClient
     Export:
-      Name: SikchungClientId
+      Name: !Sub "${AWS::StackName}-ClientId"
 
   CognitoDomain:
     Description: Cognito Hosted UI base URL
-    Value: !Sub "https://sikchung-auth-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com"
+    Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
     Export:
-      Name: SikchungCognitoDomain
+      Name: !Sub "${AWS::StackName}-CognitoDomain"
 
   ApiEndpoint:
     Description: HTTP API endpoint URL
     Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
     Export:
-      Name: SikchungApiEndpoint
+      Name: !Sub "${AWS::StackName}-ApiEndpoint"
 
   TableName:
     Description: DynamoDB table name
     Value: !Ref SikchungDataTable
     Export:
-      Name: SikchungTableName
+      Name: !Sub "${AWS::StackName}-TableName"
 
   CloudFrontDomain:
     Description: CloudFront distribution domain (앱 접속 URL)
     Value: !GetAtt CloudFrontDistribution.DomainName
     Export:
-      Name: SikchungCloudFrontDomain
+      Name: !Sub "${AWS::StackName}-CloudFrontDomain"
 
   CloudFrontDistributionId:
     Description: CloudFront distribution ID (캐시 무효화에 사용)
     Value: !Ref CloudFrontDistribution
     Export:
-      Name: SikchungCloudFrontDistributionId
+      Name: !Sub "${AWS::StackName}-CloudFrontDistributionId"
 
   FrontendBucketName:
     Description: 프론트엔드 정적 자원이 저장될 S3 버킷명
     Value: !Ref FrontendBucket
     Export:
-      Name: SikchungFrontendBucketName
+      Name: !Sub "${AWS::StackName}-FrontendBucketName"
