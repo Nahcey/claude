@@ -127,13 +127,7 @@ create_cognito_user() {
   sub=$(echo "$resp" | jq -r '.User.Attributes[] | select(.Name=="sub") | .Value')
   [ -n "$sub" ] && [ "$sub" != "null" ] || { echo "sub 조회 실패: $username" >&2; return 1; }
 
-  # 임시 비번 만료(기본 7일) 방지: 즉시 영구 비번으로 승격
-  aws cognito-idp admin-set-user-password \
-    --user-pool-id "$USER_POOL_ID" \
-    --region "$AWS_REGION" \
-    --username "$username" \
-    --password "$temp_pw" \
-    --permanent >/dev/null
+  # 임시비번 유효기간은 UserPool의 UnusedAccountValidityDays(90일)로 관리됨 (template.yaml)
 
   aws cognito-idp admin-add-user-to-group \
     --user-pool-id "$USER_POOL_ID" \

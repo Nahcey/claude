@@ -32,7 +32,6 @@ const cognito = new CognitoIdentityProviderClient({
 exports.handler = async (event) => {
   try {
     const method = event.requestContext.http.method;
-    if (method === 'OPTIONS') return ok({});
 
     const auth = authorize(event, 'admin');
     if (!auth.ok) {

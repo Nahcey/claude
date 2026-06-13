@@ -1,6 +1,6 @@
 'use strict';
 // [공용] 도메인 상수 + DOM 유틸. (전역 공유; classic script)
-// 로드 순서상 가장 먼저 → schedule-algo.js / people-store.js / ui.js / main.js 가 참조.
+// 로드 순서상 가장 먼저 → people-store.js / ui.js / main.js 가 참조.
 
 // 시간 슬롯 — 월~금은 아침/저녁 분리, 토·일은 단일 슬롯 (총 12개)
 const TIME_SLOTS = [
@@ -22,25 +22,9 @@ const SLOTS_PER_DAY     = 2;                          // 각 시간 슬롯당 �
 const TOTAL_SLOTS       = SLOTS_COUNT * SLOTS_PER_DAY; // 24
 const WEEKEND_SLOT_START = 10;  // 슬롯 인덱스 10부터 주말(토·일)
 const FLEX_SLOTS_COUNT   = 21;  // flex 21슬롯 (7일 × 아침/점심/저녁)
-const DEFAULT_NAMES = [
-  '이동민','김기환','정우진','윤민형','한우현',
-  '권정훈','정한결','김최원','오승호','박예찬',
-  '권기범','최정협','전유찬'
-];
-// 같은 그룹 인원을 가능한 한 같은 요일에 묶는 데 사용 (소프트 선호)
-const DEFAULT_GROUPS = {
-  '이동민':'A','김기환':'A','정우진':'A',
-  '윤민형':'B','한우현':'B','권정훈':'B','정한결':'B','김최원':'B',
-  '오승호':'C','박예찬':'C','권기범':'C','최정협':'C','전유찬':'C'
-};
-// 특정 인원의 디폴트 시간 슬롯 제한
-// 인덱스 0~9: 월~금 아침/저녁 (각 요일 2칸씩), 10: 토, 11: 일
-const DEFAULT_RESTRICTED = {
-  // 윤민형: 월~금 아침·저녁 모두 제한 (인덱스 0~9), 토·일은 가능
-  '윤민형': [true,true, true,true, true,true, true,true, true,true, false, false]
-};
+// 인원 명단·그룹·제한은 서버(DynamoDB MEMBER 레코드)에서만 로드 — 정적 JS에 PII 미포함
 function defaultRestrictedFor(name) {
-  return (DEFAULT_RESTRICTED[name] || new Array(SLOTS_COUNT).fill(false)).slice();
+  return new Array(SLOTS_COUNT).fill(false);
 }
 
 // 결과 표시용 부담(load) unit Map: 평일 슬롯=1, 주말 슬롯=2.

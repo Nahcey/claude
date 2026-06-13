@@ -136,17 +136,14 @@ $('modalExcluded').addEventListener('click', () => {
   autoSave();
 });
 
-// 해당 인원 설정만 초기화 (모달은 열린 상태 유지)
-// 우선순위는 디폴트 명단의 위치 기반 값으로 복원, 커스텀 추가 인원은 0
+// 해당 인원 설정만 초기화 (모달은 열린 상태 유지), 우선순위는 0으로
 $('modalReset').addEventListener('click', () => {
   const p = editingPerson();
   if (!p) return;
   if (!confirm('이 인원의 설정(제한 시간 슬롯 · 주 2회 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
-  const defaultIdx = DEFAULT_NAMES.indexOf(p.name);
-  const defaultPriority = defaultIdx >= 0 ? (DEFAULT_NAMES.length - defaultIdx) : 0;
   p.restricted = defaultRestrictedFor(p.name); // 12칸 배열
   p.double = false; // index2 디폴트: 주 2회 OFF
-  p.priority = defaultPriority;
+  p.priority = 0;
   p.rookie = false;
   renderModalBody();
   autoSave();
@@ -183,7 +180,7 @@ $('addBtn').addEventListener('click', () => {
     restricted: defaultRestrictedFor(name), // 12칸 배열
     double: false, // index2 디폴트: 주 2회 OFF
     priority: 0,
-    group: DEFAULT_GROUPS[name] || null,
+    group: null,
     rookie: false,
     excluded: false,
   });
@@ -241,6 +238,7 @@ function _mapMembersTopeople(members) {
   return (members || []).map((m, i) => {
     const p = normalizePerson({ ...m, id: i + 1 });
     p.sub = m.sub;
+    p.username = m.username; // 정렬용 — normalizePerson이 username을 버림
     p.updatedAt = m.updatedAt;
     return p;
   });
@@ -249,6 +247,7 @@ function _mapMembersTopeople(members) {
 function _mapMeToPersonEntry(me) {
   const p = normalizePerson({ ...me, id: 1 });
   p.sub = _currentUser.sub;
+  p.username = me.username; // 정렬용 — normalizePerson이 username을 버림
   p.updatedAt = me.updatedAt;
   // displayName(한글 이름)을 본인 카드 이름으로 사용 (생성 시점에 박혀있음)
   if (!p.name) p.name = _currentUser.displayName || _currentUser.username || '';
@@ -402,9 +401,10 @@ async function boot() {
     $('generateSection').style.display = 'none';
     $('latestScheduleSection').style.display = 'none';
     $('result').style.display = 'none';
-    if (!loggedOutFlag && window.Auth) {
+    if (!loggedOutFlag && !wasCallback && window.Auth) {
+      // 첫 방문(로그아웃 플래그 없음 + 콜백 아님)만 자동 리다이렉트
       Auth.login();
-    } else if (!loggedOutFlag) {
+    } else {
       // 로그아웃 후 or 콜백 실패: 로그인 버튼만 표시 (자동 리다이렉트 없음)
       // 플래그는 storeTokens()(로그인 성공 시)에서 제거됨
       console.log('[boot] post-logout or failed callback → show login button only');

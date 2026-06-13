@@ -101,7 +101,6 @@ const _flexEngine = createSwapEngine({
   getSelection:  () => _flexSelectedSlot,
   setSelection:  (s) => { _flexSelectedSlot = s; },
   isEditMode:    () => _flexEditMode,
-  capacityOf:    (s) => _flexState.demand[s],
   canPlace:      () => true,
   slotLabel:     (s) => _FLEX_DAYS[Math.floor(s / 3)] + ' ' + _FLEX_SHIFTS[s % 3],
   panelId:       'flexEditPanel',

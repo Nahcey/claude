@@ -1,7 +1,7 @@
 'use strict';
 // [UI] 렌더링·모달·결과/편집 화면. (전역 공유; classic script)
 // 전역 상태: lastResult, editingId, editMode, selectedSlot.
-// constants.js·schedule-algo.js·people-store.js 다음, main.js 이전에 로드.
+// constants.js·people-store.js 다음, main.js 이전에 로드.
 
 let lastResult = null; // 마지막으로 생성된 결과 (재생성 시 비교용)
 
@@ -12,12 +12,11 @@ const peopleGrid = $('peopleGrid');
 
 function renderPeople() {
   peopleGrid.innerHTML = '';
-  const nameOrder = Object.fromEntries(DEFAULT_NAMES.map((n, i) => [n, i]));
-  const sorted = [...people].sort((a, b) => {
-    const ai = nameOrder[a.name] ?? Infinity;
-    const bi = nameOrder[b.name] ?? Infinity;
-    return ai - bi;
-  });
+  // username(wjdqhwndeoNN) 순 정렬 — 서버 레코드 기준, 기존 표시 순서와 동일
+  const sorted = [...people].sort((a, b) =>
+    (a.username || '').localeCompare(b.username || '') ||
+    (a.name || '').localeCompare(b.name || '', 'ko')
+  );
   for (const p of sorted) {
     const card = document.createElement('button');
     card.type = 'button';
@@ -301,7 +300,7 @@ function toggleEditMode() {
 // ============================================================
 function createSwapEngine({
   getSchedule, getSelection, setSelection, isEditMode,
-  capacityOf, canPlace, slotLabel, panelId,
+  canPlace, slotLabel, panelId,
   afterMutation, rerender, chipDecorator,
 }) {
   function isCompatibleSwap(targetSlotIdx, targetPos) {
@@ -468,7 +467,6 @@ const _swapEngine = createSwapEngine({
   getSelection:  () => selectedSlot,
   setSelection:  (s) => { selectedSlot = s; },
   isEditMode:    () => editMode,
-  capacityOf:    () => SLOTS_PER_DAY,
   canPlace:      (p, s) => !p.restricted[s],
   slotLabel:     (s) => TIME_SLOTS[s].label,
   panelId:       'editPanel',
@@ -481,7 +479,7 @@ const _swapEngine = createSwapEngine({
 });
 
 // 한 (요일, 시간대) 셀 — 슬롯 인덱스가 -1 이면 "—" (해당 시간대 없음, 토/일 아침 칸)
-function buildShiftCell(slotIdx, r, trueCrossover) {
+function buildShiftCell(slotIdx, r) {
   const td = document.createElement('td');
   if (slotIdx < 0) {
     td.className = 'cell-na';
@@ -564,18 +562,6 @@ function renderResult(r) {
     if (swp > cur) [e[0], e[1]] = [e[1], e[0]];
   }
 
-  // 주말 + 평일 둘 다 들어간 인원 (현재 정책에서는 mutual exclusion 으로 발생하지 않지만
-  //  yellow chip 강조 로직이 이 set 을 사용하므로 계산은 유지)
-  const weekdayIds = new Set();
-  const weekendIds = new Set();
-  for (let i = 0; i < SLOTS_COUNT; i++) {
-    for (const p of r.schedule[i]) if (p) {
-      if (i >= WEEKEND_SLOT_START) weekendIds.add(p.id); else weekdayIds.add(p.id);
-    }
-  }
-  const trueCrossover = new Set();
-  for (const id of weekendIds) if (weekdayIds.has(id)) trueCrossover.add(id);
-
   // 한 행에 [요일 | 아침 | 저녁] — 월~금 5행 + 토 + 일 = 7행
   const WEEK_DAY_LABELS = ['월','화','수','목','금','토','일'];
   for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
@@ -597,8 +583,8 @@ function renderResult(r) {
       eveningIdx = WEEKEND_SLOT_START + (dayIdx - 5);
     }
 
-    tr.appendChild(buildShiftCell(morningIdx, r, trueCrossover));
-    tr.appendChild(buildShiftCell(eveningIdx, r, trueCrossover));
+    tr.appendChild(buildShiftCell(morningIdx, r));
+    tr.appendChild(buildShiftCell(eveningIdx, r));
     body.appendChild(tr);
   }
 
