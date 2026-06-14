@@ -190,6 +190,26 @@ PERMISSION_POLICY=$(jq -n \
         Resource: "*"
       },
       {
+        Sid: "CloudWatchLogsScoped",
+        Effect: "Allow",
+        Action: [
+          "logs:CreateLogGroup",
+          "logs:DeleteLogGroup",
+          "logs:PutRetentionPolicy",
+          "logs:DeleteRetentionPolicy",
+          "logs:TagResource",
+          "logs:UntagResource",
+          "logs:ListTagsForResource"
+        ],
+        Resource: "arn:aws:logs:\($region):\($account):log-group:/aws/lambda/\($stack)-*"
+      },
+      {
+        Sid: "CloudWatchLogsDescribe",
+        Effect: "Allow",
+        Action: "logs:DescribeLogGroups",
+        Resource: "*"
+      },
+      {
         Sid: "IamRolesScoped",
         Effect: "Allow",
         Action: [
