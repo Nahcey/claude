@@ -96,6 +96,25 @@ jobs:
             --no-fail-on-empty-changeset \
             --image-repository "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
 
+      # ── 7.5. 로그 보존정책 설정 (멱등) ─────────────────────────────────────
+      # CFN으로 LogGroup을 만들면 Lambda 자동생성 로그그룹과 충돌하므로,
+      # 배포 후 스택의 Lambda 함수별 로그그룹에 30일 보존을 직접 설정한다.
+      # 로그그룹이 아직 없으면(함수 미호출) 생성만 해두고 보존을 적용한다.
+      - name: Set log retention (30 days)
+        run: |
+          set -euo pipefail
+          FNS=$(aws cloudformation describe-stack-resources \
+            --stack-name sikchung \
+            --query "StackResources[?ResourceType=='AWS::Lambda::Function'].PhysicalResourceId" \
+            --output text)
+          for fn in $FNS; do
+            lg="/aws/lambda/$fn"
+            # 없으면 생성 (있으면 ResourceAlreadyExists 무시)
+            aws logs create-log-group --log-group-name "$lg" 2>/dev/null || true
+            aws logs put-retention-policy --log-group-name "$lg" --retention-in-days 30
+            echo "retention 30d → $lg"
+          done
+
       # ── 8. 스택 출력값 수집 (기존 deploy.yml에서 이전) ─────────────────────
       - name: Get stack outputs
         id: outputs
