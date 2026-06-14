@@ -394,58 +394,11 @@ Resources:
       Principal: cognito-idp.amazonaws.com
       SourceArn: !GetAtt UserPool.Arn
 
-  # ── CloudWatch Log Groups (보존 30일 — 실명 포함 로그 무기한 보존 방지) ─────
-  # NOTE: 배포 역할에 logs 권한이 있어야 함 (bootstrap-oidc.sh CloudWatchLogsScoped).
-  # NOTE: Lambda가 자동 생성한 동명 로그그룹이 이미 있으면 CREATE 충돌.
-  # 배포 직전 기존 /aws/lambda/sikchung-* 로그그룹을 수동 삭제할 것 (운영 체크리스트).
-
-  MeFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${MeFunction}"
-      RetentionInDays: 30
-
-  MembersFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${MembersFunction}"
-      RetentionInDays: 30
-
-  ScheduleFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${ScheduleFunction}"
-      RetentionInDays: 30
-
-  GenerateScheduleFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${GenerateScheduleFunction}"
-      RetentionInDays: 30
-
-  GenerateFlexScheduleFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${GenerateFlexScheduleFunction}"
-      RetentionInDays: 30
-
-  AdminFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${AdminFunction}"
-      RetentionInDays: 30
-
-  AuditLogFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${AuditLogFunction}"
-      RetentionInDays: 30
-
-  PostConfirmationFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${PostConfirmationFunction}"
-      RetentionInDays: 30
+  # ── CloudWatch Log Groups ───────────────────────────────────────────────────
+  # 로그 보존(30일)은 CFN이 아닌 배포 후 단계(deploy-backend.yml)에서
+  # aws logs put-retention-policy 로 설정한다. Lambda가 로그그룹을 자동 생성하는
+  # 구조상 CFN이 동명 로그그룹을 만들려 하면 충돌·롤백이 발생하므로,
+  # 충돌·삭제권한 의존이 없는 멱등 방식을 사용한다.
 
   # ── S3 (frontend hosting) ──────────────────────────────────────────────────
 
