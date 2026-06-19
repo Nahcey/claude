@@ -14,7 +14,6 @@ function renderPeople() {
   peopleGrid.innerHTML = '';
   // username(wjdqhwndeoNN) 순 정렬 — 서버 레코드 기준, 기존 표시 순서와 동일
   const sorted = [...people].sort((a, b) =>
-    (a.username || '').localeCompare(b.username || '') ||
     (a.name || '').localeCompare(b.name || '', 'ko')
   );
   for (const p of sorted) {
