@@ -13,10 +13,9 @@ const peopleGrid = $('peopleGrid');
 function renderPeople() {
   peopleGrid.innerHTML = '';
   // username(wjdqhwndeoNN) 순 정렬 — 서버 레코드 기준, 기존 표시 순서와 동일
-  const sorted = [...people].sort((a, b) =>
-    (a.username || '').localeCompare(b.username || '') ||
-    (a.name || '').localeCompare(b.name || '', 'ko')
-  );
+  // username 번호 순(wjdqhwndeoNN). 00(박예찬 admin)은 10번 슬롯에 표시.
+  const usernameNum = u => { const m = (u||'').match(/(\d+)$/); const n = m ? +m[1] : 999; return n === 0 ? 10 : n; };
+  const sorted = [...people].sort((a, b) => usernameNum(a.username) - usernameNum(b.username));
   for (const p of sorted) {
     const card = document.createElement('button');
     card.type = 'button';
