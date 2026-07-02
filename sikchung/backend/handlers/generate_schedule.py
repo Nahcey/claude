@@ -26,11 +26,15 @@ def handler(event, context):
     try:
         body = json.loads(event.get('body') or '{}')
         eligible = body.get('eligible', [])
+        mode = body.get('mode', 'normal')
     except Exception:
         return _resp(400, {'error': 'Invalid request body'})
 
     if not isinstance(eligible, list):
         return _resp(400, {'error': 'eligible must be an array'})
+
+    if mode not in ('normal', 'summer'):
+        return _resp(400, {'error': "mode must be 'normal' or 'summer'"})
 
     # --- trust boundary: validate all caller-supplied fields ---
     if len(eligible) > 50:
@@ -59,7 +63,7 @@ def handler(event, context):
         if 'rookie' in p and not isinstance(p['rookie'], bool):
             return _resp(400, {'error': f'eligible[{idx}].rookie must be boolean'})
 
-    result = generate_schedule(eligible)
+    result = generate_schedule(eligible, mode=mode)
 
     # schedule: person dicts → ids (JSON numbers)
     schedule_ids = [
@@ -72,12 +76,14 @@ def handler(event, context):
 
     # 감사 로그: 동기 호출이지만 write_audit 내부에서 예외를 삼켜 본 응답을 막지 않음
     write_audit(event, auth, 'SCHEDULE_GENERATE', {
+        'mode':         mode,
         'optimal':      result.get('optimal', False),
         'skippedCount': len(result['skipped']),
         'assignCount':  assign_count,
     })
 
     return _resp(200, {
+        'mode':        mode,
         'schedule':    schedule_ids,
         'skipped':     [{'id': s['person']['id'], 'reason': s['reason']} for s in result['skipped']],
         'failed':      [{'id': f['person']['id'], 'reason': f['reason']} for f in result['failed']],
