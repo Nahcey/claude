@@ -20,6 +20,13 @@ TOTAL_SLOTS   = SLOTS_COUNT * SLOTS_PER_DAY
 WEEKDAY_DAYS  = 5
 WEEKEND_SLOTS = [10, 11]
 
+# 모드별 슬롯 정원. 총합은 두 모드 모두 24로 동일 →
+# 인당 cap(2/double 4), 부담 unit(평일 1/주말 2), threshold 로직은 공유.
+MODE_CAPACITY = {
+    'normal': [SLOTS_PER_DAY] * SLOTS_COUNT,
+    'summer': [4, 0, 4, 0, 4, 0, 4, 0, 4, 0, 2, 2],  # 평일 아침 4, 저녁 0, 토·일 2
+}
+
 # CP-SAT 상태 코드 → 이름 (진단 출력용)
 _CP_STATUS = {OPTIMAL: 'OPTIMAL', FEASIBLE: 'FEASIBLE'}
 
@@ -35,9 +42,12 @@ def _pair_preference(a, b):
     return 0
 
 
-def generate_schedule(eligible):
+def generate_schedule(eligible, mode='normal'):
     # ── [진단] 입력 크기만 기록 (실명 PII는 CloudWatch에 남기지 않음) ─────────
-    print(f'[input] {len(eligible)} people', file=sys.stderr)
+    print(f'[input] {len(eligible)} people mode={mode}', file=sys.stderr)
+
+    cap = MODE_CAPACITY[mode]
+    total_cap = sum(cap)
 
     skip_result = apply_skip_priority(eligible)
     active  = skip_result['active']
@@ -46,7 +56,7 @@ def generate_schedule(eligible):
     m = len(active)
 
     def _empty_result(optimal=False):
-        sch = [[None, None] for _ in range(SLOTS_COUNT)]
+        sch = [[None] * cap[s] for s in range(SLOTS_COUNT)]
         return {
             'schedule':     sch,
             'skipped':      skipped,
@@ -59,7 +69,7 @@ def generate_schedule(eligible):
                 for p in active
             ],
             'full_days':    0,
-            'empty_slots':  TOTAL_SLOTS,
+            'empty_slots':  total_cap,
             'assign_count': {},
             'active':       active,
             'optimal':      optimal,
@@ -79,23 +89,24 @@ def generate_schedule(eligible):
 
     for i, person in enumerate(active):
         for s in range(SLOTS_COUNT):
-            if person['restricted'][s]:
+            # restricted 또는 정원 0 슬롯(혹서기 평일 저녁)은 배정 불가 (변수 가지치기)
+            if person['restricted'][s] or cap[s] == 0:
                 model.Add(x[i][s] == 0)
 
     # ── Hard constraint: slot capacity ────────────────────────────────────────
 
     for s in range(SLOTS_COUNT):
-        model.Add(sum(x[i][s] for i in range(m)) <= SLOTS_PER_DAY)
+        model.Add(sum(x[i][s] for i in range(m)) <= cap[s])
 
     # ── Hard constraint: per-person cap ──────────────────────────────────────
     # 평일 슬롯 각 1비용, 주말 슬롯 각 2비용 → 총 비용 ≤ cap.
     # sum(all_slots) + sum(weekend_slots) = raw_wd + 2×wknd ≤ cap.
     # non-double cap=2, double cap=4.
     for i, person in enumerate(active):
-        cap = 4 if person.get('double') else 2
+        person_cap = 4 if person.get('double') else 2
         model.Add(
             sum(x[i][s] for s in range(SLOTS_COUNT)) +
-            sum(x[i][s] for s in WEEKEND_SLOTS) <= cap
+            sum(x[i][s] for s in WEEKEND_SLOTS) <= person_cap
         )
 
     # ── Derived variables ─────────────────────────────────────────────────────
@@ -106,10 +117,13 @@ def generate_schedule(eligible):
         model.AddMaxEquality(assigned[i], [x[i][s] for s in range(SLOTS_COUNT)])
 
     # atomic[i][d] = AND(morning, evening) = min
-    atomic = [[model.NewBoolVar(f'atom{i}_{d}') for d in range(WEEKDAY_DAYS)] for i in range(m)]
-    for i in range(m):
-        for d in range(WEEKDAY_DAYS):
-            model.AddMinEquality(atomic[i][d], [x[i][2*d], x[i][2*d+1]])
+    # summer 모드는 저녁 정원이 0이라 무의미 → 변수 생성·Stage 4 스킵
+    atomic = None
+    if mode != 'summer':
+        atomic = [[model.NewBoolVar(f'atom{i}_{d}') for d in range(WEEKDAY_DAYS)] for i in range(m)]
+        for i in range(m):
+            for d in range(WEEKDAY_DAYS):
+                model.AddMinEquality(atomic[i][d], [x[i][2*d], x[i][2*d+1]])
 
     # has_wk[i] = OR over weekend slots
     has_wk = [model.NewBoolVar(f'haswk{i}') for i in range(m)]
@@ -148,13 +162,15 @@ def generate_schedule(eligible):
     else:
         model.Add(excess_v == 0)
 
-    filled_v = model.NewIntVar(0, TOTAL_SLOTS, 'filled_v')
+    filled_v = model.NewIntVar(0, total_cap, 'filled_v')
     model.Add(filled_v == sum(x[i][s] for i in range(m) for s in range(SLOTS_COUNT)))
 
-    atomic_total_v = model.NewIntVar(0, m * WEEKDAY_DAYS, 'atomic_total_v')
-    model.Add(atomic_total_v == sum(
-        atomic[i][d] for i in range(m) for d in range(WEEKDAY_DAYS)
-    ))
+    atomic_total_v = None
+    if atomic is not None:
+        atomic_total_v = model.NewIntVar(0, m * WEEKDAY_DAYS, 'atomic_total_v')
+        model.Add(atomic_total_v == sum(
+            atomic[i][d] for i in range(m) for d in range(WEEKDAY_DAYS)
+        ))
 
     mix_total_v = model.NewIntVar(0, m, 'mix_total_v')
     model.Add(mix_total_v == sum(mix))
@@ -185,7 +201,8 @@ def generate_schedule(eligible):
             if pref == 0:
                 continue
             for s in range(SLOTS_COUNT):
-                if active[i]['restricted'][s] or active[j]['restricted'][s]:
+                # 두 명이 함께 서려면 정원 2 이상 필요 (cap 0/1 슬롯은 페어 불가)
+                if cap[s] < 2 or active[i]['restricted'][s] or active[j]['restricted'][s]:
                     continue
                 pv = model.NewBoolVar(f'pr{i}_{j}_{s}')
                 model.AddMinEquality(pv, [x[i][s], x[j][s]])
@@ -243,9 +260,11 @@ def generate_schedule(eligible):
                 model.Add(raw_unit_v[i] + 4 >= v3 + 4 * assigned[i])
 
     # Stage 4: maximize atomic (both morning+evening same day) count  [2s]
-    v4 = solve_stage('max', atomic_total_v, 2.0, label='atomic')
-    if v4 is not None:
-        model.Add(atomic_total_v >= v4)
+    # summer 모드는 저녁 슬롯이 없어 스킵
+    if atomic_total_v is not None:
+        v4 = solve_stage('max', atomic_total_v, 2.0, label='atomic')
+        if v4 is not None:
+            model.Add(atomic_total_v >= v4)
 
     # Stage 5: 2회 배정 인원 평일+주말 조합 최대화  [2s]
     v5 = solve_stage('max', mix_total_v, 2.0, label='mix')
@@ -270,14 +289,14 @@ def generate_schedule(eligible):
 
     # ── Extract solution ──────────────────────────────────────────────────────
 
-    result_schedule = [[None, None] for _ in range(SLOTS_COUNT)]
+    result_schedule = [[None] * cap[s] for s in range(SLOTS_COUNT)]
     for s in range(SLOTS_COUNT):
         pos = 0
         for i in range(m):
             if solver.Value(x[i][s]) == 1:
                 result_schedule[s][pos] = active[i]
                 pos += 1
-                if pos >= SLOTS_PER_DAY:
+                if pos >= cap[s]:
                     break
 
     assigned_ids = {p['id'] for slot in result_schedule for p in slot if p}
@@ -290,10 +309,10 @@ def generate_schedule(eligible):
         for p in active if p['id'] not in assigned_ids
     ]
 
-    full_days   = sum(1 for slot in result_schedule
-                      if sum(1 for p in slot if p) == SLOTS_PER_DAY)
-    empty_slots = sum(SLOTS_PER_DAY - sum(1 for p in slot if p)
-                      for slot in result_schedule)
+    full_days   = sum(1 for s, slot in enumerate(result_schedule)
+                      if cap[s] > 0 and sum(1 for p in slot if p) == cap[s])
+    empty_slots = sum(cap[s] - sum(1 for p in slot if p)
+                      for s, slot in enumerate(result_schedule))
 
     return {
         'schedule':     result_schedule,
@@ -307,17 +326,20 @@ def generate_schedule(eligible):
     }
 
 
-def check_expected(eligible, expected_assignment):
+def check_expected(eligible, expected_assignment, mode='normal'):
     """expected_assignment가 hard constraint를 충족하는지 검사한다.
 
     generate_schedule과 독립된 경량 함수. 시간예산 1초.
 
     Args:
         eligible:            generate_schedule에 전달하는 것과 동일한 eligible 배열.
-        expected_assignment: {slot_index: [id, ...]} (int 키, id 최대 SLOTS_PER_DAY 개).
+        expected_assignment: {slot_index: [id, ...]} (int 키, id 최대 슬롯 정원 개).
+        mode:                'normal' | 'summer' (MODE_CAPACITY 키).
     Returns:
         {'feasible': bool, 'wall': float}
     """
+    cap = MODE_CAPACITY[mode]
+
     skip_result = apply_skip_priority(eligible)
     active = skip_result['active']
     m = len(active)
@@ -333,22 +355,22 @@ def check_expected(eligible, expected_assignment):
 
     x = [[model.NewBoolVar(f'x{i}_{s}') for s in range(SLOTS_COUNT)] for i in range(m)]
 
-    # hard: restricted
+    # hard: restricted / 정원 0 슬롯
     for i, person in enumerate(active):
         for s in range(SLOTS_COUNT):
-            if person['restricted'][s]:
+            if person['restricted'][s] or cap[s] == 0:
                 model.Add(x[i][s] == 0)
 
     # hard: slot capacity
     for s in range(SLOTS_COUNT):
-        model.Add(sum(x[i][s] for i in range(m)) <= SLOTS_PER_DAY)
+        model.Add(sum(x[i][s] for i in range(m)) <= cap[s])
 
     # hard: per-person cap
     for i, person in enumerate(active):
-        cap = 4 if person.get('double') else 2
+        person_cap = 4 if person.get('double') else 2
         model.Add(
             sum(x[i][s] for s in range(SLOTS_COUNT)) +
-            sum(x[i][s] for s in WEEKEND_SLOTS) <= cap
+            sum(x[i][s] for s in WEEKEND_SLOTS) <= person_cap
         )
 
     # fix expected assignment: x[i][s] == 1 if assigned, 0 otherwise
@@ -372,13 +394,18 @@ def check_expected(eligible, expected_assignment):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print('Usage: python schedule_cpsat.py <eligible.json>', file=sys.stderr)
+        print('Usage: python schedule_cpsat.py <eligible.json> [normal|summer]', file=sys.stderr)
+        sys.exit(1)
+
+    _mode = sys.argv[2] if len(sys.argv) > 2 else 'normal'
+    if _mode not in MODE_CAPACITY:
+        print(f'unknown mode: {_mode} (normal|summer)', file=sys.stderr)
         sys.exit(1)
 
     with open(sys.argv[1], encoding='utf-8') as f:
         _eligible = json.load(f)
 
-    _result = generate_schedule(_eligible)
+    _result = generate_schedule(_eligible, mode=_mode)
 
     _SLOT_LABELS = [
         '월아', '월저', '화아', '화저', '수아', '수저',

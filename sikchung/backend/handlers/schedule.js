@@ -36,13 +36,20 @@ exports.handler = async (event) => {
       if (!WEEK_ID_RE.test(weekId)) return badRequest('weekId must match yyyy-ww (e.g. 2025-21)');
       if (scheduleData === undefined) return badRequest('scheduleData is required');
 
+      // mode: 미전달 시 normal (구 클라이언트 호환). 화이트리스트 검증.
+      const mode = body.mode === undefined ? 'normal' : body.mode;
+      if (!['normal', 'summer', 'flex'].includes(mode)) {
+        return badRequest("mode must be 'normal', 'summer', or 'flex'");
+      }
+
       const saved = await putSchedule(weekId, {
         scheduleData,
+        mode,
         generatedBy:      userSub,
         generatedByEmail: email,
       });
       const { PK, SK, ...result } = saved;
-      writeAudit(event, auth, 'SCHEDULE_SAVE', { weekId: SK });   // fire-and-forget
+      writeAudit(event, auth, 'SCHEDULE_SAVE', { weekId: SK, mode });   // fire-and-forget
       return ok({ weekId: SK, ...result });
     }
 
