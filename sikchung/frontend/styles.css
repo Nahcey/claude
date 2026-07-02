@@ -119,6 +119,21 @@ table.people input[type="number"] {
 /* Generate button row */
 .actions-row { display: flex; gap: 10px; flex-wrap: wrap; }
 
+/* 일정 모드 세그먼트 토글 (일반/혹서기) */
+.mode-toggle {
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; background: var(--bg);
+}
+.mode-toggle .mode-opt {
+  border: none; background: transparent; cursor: pointer;
+  padding: 10px 16px; font-family: inherit; font-size: 14px;
+  font-weight: 500; color: var(--muted); white-space: nowrap;
+}
+.mode-toggle .mode-opt.active {
+  background: var(--primary); color: #fff; font-weight: 600;
+}
+
 /* Result table */
 table.schedule {
   width: 100%; min-width: 360px;

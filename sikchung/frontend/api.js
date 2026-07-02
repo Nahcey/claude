@@ -50,9 +50,9 @@
   const getMembers          = ()            => fetchApi('/members');
   const putMember           = (sub, d)      => fetchApi('/member/' + sub,         { method: 'PUT',    body: JSON.stringify(d) });
   const getLatestSchedule   = ()            => fetchApi('/schedule/latest');
-  const postSchedule        = (wId, sd)     => fetchApi('/schedule',              { method: 'POST',   body: JSON.stringify({ weekId: wId, scheduleData: sd }) });
+  const postSchedule        = (wId, sd, mode) => fetchApi('/schedule',            { method: 'POST',   body: JSON.stringify({ weekId: wId, scheduleData: sd, mode: mode || 'normal' }) });
   const deleteSchedule      = ()            => fetchApi('/schedule/latest',        { method: 'DELETE' });
-  const generateSchedule    = (eligible)        => fetchApi('/schedule/generate',          { method: 'POST', body: JSON.stringify({ eligible }) });
+  const generateSchedule    = (eligible, mode) => fetchApi('/schedule/generate',   { method: 'POST', body: JSON.stringify({ eligible, mode: mode || 'normal' }) });
   const generateFlexSchedule = (eligible, demand) => fetchApi('/schedule/flex/generate', { method: 'POST', body: JSON.stringify({ eligible, demand }) });
   const postUser            = (d)           => fetchApi('/user',                  { method: 'POST',   body: JSON.stringify(d) });
   const deleteUser          = (sub)         => fetchApi('/user/' + sub,           { method: 'DELETE' });

@@ -22,6 +22,24 @@ const SLOTS_PER_DAY     = 2;                          // 각 시간 슬롯당 �
 const TOTAL_SLOTS       = SLOTS_COUNT * SLOTS_PER_DAY; // 24
 const WEEKEND_SLOT_START = 10;  // 슬롯 인덱스 10부터 주말(토·일)
 const FLEX_SLOTS_COUNT   = 21;  // flex 21슬롯 (7일 × 아침/점심/저녁)
+
+// 모드별 슬롯 정원 (백엔드 MODE_CAPACITY와 동일). 총합은 두 모드 모두 24.
+// 렌더/편집 경로에서는 슬롯 배열 길이(schedule[s].length)를 정원으로 사용하고,
+// 이 벡터는 저장본 복원 시 패딩 길이 결정에만 쓴다.
+const MODE_CAPACITY = {
+  normal: new Array(SLOTS_COUNT).fill(SLOTS_PER_DAY),
+  summer: [4, 0, 4, 0, 4, 0, 4, 0, 4, 0, 2, 2],  // 평일 아침 4·저녁 0, 토·일 2
+};
+
+// mode 필드 없는 구 저장 레코드 추론: 21슬롯 이상 → flex,
+// 슬롯 중 길이 > 2 존재 → summer, 그 외 normal.
+function inferScheduleMode(scheduleData) {
+  if (!Array.isArray(scheduleData)) return 'normal';
+  if (scheduleData.length >= FLEX_SLOTS_COUNT) return 'flex';
+  if (scheduleData.some(slot => Array.isArray(slot) && slot.length > 2)) return 'summer';
+  return 'normal';
+}
+
 // 인원 명단·그룹·제한은 서버(DynamoDB MEMBER 레코드)에서만 로드 — 정적 JS에 PII 미포함
 function defaultRestrictedFor(name) {
   return new Array(SLOTS_COUNT).fill(false);
