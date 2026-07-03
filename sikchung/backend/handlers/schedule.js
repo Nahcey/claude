@@ -30,9 +30,9 @@ exports.handler = async (event) => {
         }
         return ok({ mode: await getScheduleMode() });
       }
-      // PUT: leader 이상
+      // PUT: admin 전용 (모드는 전 부대 공통 설정이라 리더도 변경 불가)
       if (method === 'PUT') {
-        const auth = authorize(event, 'leader');
+        const auth = authorize(event, 'admin');
         if (!auth.ok) {
           return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
         }

@@ -9,10 +9,14 @@ let _apiMode = false;    // true: 서버 연동 모드
 // 분대원 각자 기기의 제한 에디터가 같은 모드를 따라야 하므로 로컬 저장 안 함.
 let _scheduleMode = 'normal';
 
-// 모드 변경 시 UI 일괄 갱신: 토글 활성 + 인원 카드(제한 배지) + 열려 있는 인원 모달
+// 모드 변경 시 UI 일괄 갱신: 토글 활성 + 인원 카드(제한 배지) + 열려 있는 인원 모달.
+// 변경 권한은 admin 전용 — 비admin은 현재 모드 표시만 (버튼 비활성).
 function _applyModeUI() {
-  document.querySelectorAll('#modeToggle .mode-opt').forEach(b =>
-    b.classList.toggle('active', b.dataset.mode === _scheduleMode));
+  const isAdmin = !!(_currentUser && _currentUser.isAdmin);
+  document.querySelectorAll('#modeToggle .mode-opt').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === _scheduleMode);
+    b.disabled = !isAdmin;
+  });
   renderPeople();
   if (editingId != null) renderModalBody();
 }
@@ -20,6 +24,7 @@ function _applyModeUI() {
 (function initModeToggle() {
   document.querySelectorAll('#modeToggle .mode-opt').forEach(b =>
     b.addEventListener('click', async () => {
+      if (!_currentUser || !_currentUser.isAdmin) return;   // admin 전용 (서버도 403)
       const newMode = b.dataset.mode === 'summer' ? 'summer' : 'normal';
       if (newMode === _scheduleMode) return;
       try {
