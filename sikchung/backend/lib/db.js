@@ -125,6 +125,26 @@ async function listAuditLogs({ limit = 50, before = null } = {}) {
   return { items, nextCursor };
 }
 
+// ── SETTINGS ──────────────────────────────────────────────────────────────────
+
+/** 전역 일정 모드. 레코드 미존재 시 'normal'. @returns {'normal'|'summer'} */
+async function getScheduleMode() {
+  const { Item } = await client.send(new GetCommand({
+    TableName: TABLE_NAME,
+    Key: { PK: 'SETTINGS', SK: 'SCHEDULE_MODE' },
+  }));
+  return Item?.mode ?? 'normal';
+}
+
+/** 전역 일정 모드 저장 (호출 전 화이트리스트 검증은 핸들러 책임). */
+async function putScheduleMode(mode) {
+  await client.send(new PutCommand({
+    TableName: TABLE_NAME,
+    Item: { PK: 'SETTINGS', SK: 'SCHEDULE_MODE', mode, updatedAt: new Date().toISOString() },
+  }));
+  return mode;
+}
+
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
 
 /**
@@ -172,6 +192,8 @@ module.exports = {
   listMembers,
   deleteMember,
   listAuditLogs,
+  getScheduleMode,
+  putScheduleMode,
   putSchedule,
   getLatestSchedule,
   deleteLatestSchedule,

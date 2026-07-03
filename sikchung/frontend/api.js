@@ -50,6 +50,8 @@
   const getMembers          = ()            => fetchApi('/members');
   const putMember           = (sub, d)      => fetchApi('/member/' + sub,         { method: 'PUT',    body: JSON.stringify(d) });
   const getLatestSchedule   = ()            => fetchApi('/schedule/latest');
+  const getScheduleMode     = ()            => fetchApi('/schedule/mode');
+  const putScheduleMode     = (mode)        => fetchApi('/schedule/mode',          { method: 'PUT',    body: JSON.stringify({ mode }) });
   const postSchedule        = (wId, sd, mode) => fetchApi('/schedule',            { method: 'POST',   body: JSON.stringify({ weekId: wId, scheduleData: sd, mode: mode || 'normal' }) });
   const deleteSchedule      = ()            => fetchApi('/schedule/latest',        { method: 'DELETE' });
   const generateSchedule    = (eligible, mode) => fetchApi('/schedule/generate',   { method: 'POST', body: JSON.stringify({ eligible, mode: mode || 'normal' }) });
@@ -69,6 +71,7 @@
     getMe, putMe,
     getMembers, putMember,
     getLatestSchedule, postSchedule, deleteSchedule, generateSchedule, generateFlexSchedule,
+    getScheduleMode, putScheduleMode,
     postUser, deleteUser, putUserRole,
     getAuditLogs,
   };

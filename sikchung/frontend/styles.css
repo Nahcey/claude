@@ -341,6 +341,9 @@ table.schedule td.cell-na      { background: #F3F4F6; color: var(--muted); font-
 }
 .day-toggle:hover:not(.active) { background: var(--bg); }
 .day-toggle.full-week { grid-column: 2 / 5; }
+/* 혹서기 모드: [요일|아침] 2열 변형 — 토·일 토글도 남은 1열만 차지 */
+.day-grid.summer { grid-template-columns: 36px 1fr; }
+.day-grid.summer .day-toggle.full-week { grid-column: 2 / 3; }
 .inline-toggle {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px; background: var(--bg); border-radius: 10px; cursor: pointer;

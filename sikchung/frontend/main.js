@@ -5,20 +5,32 @@
 let _currentUser = null; // Permissions.getCurrentUser() 결과 (로그인 시)
 let _apiMode = false;    // true: 서버 연동 모드
 
-// 일정 생성 모드 ('normal' | 'summer') — localStorage에 기억, 부팅 시 복원
-let _scheduleMode = (localStorage.getItem('sikchung_mode') === 'summer') ? 'summer' : 'normal';
+// 일정 생성 모드 ('normal' | 'summer') — 서버 전역 설정 (GET/PUT /schedule/mode).
+// 분대원 각자 기기의 제한 에디터가 같은 모드를 따라야 하므로 로컬 저장 안 함.
+let _scheduleMode = 'normal';
+
+// 모드 변경 시 UI 일괄 갱신: 토글 활성 + 인원 카드(제한 배지) + 열려 있는 인원 모달
+function _applyModeUI() {
+  document.querySelectorAll('#modeToggle .mode-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === _scheduleMode));
+  renderPeople();
+  if (editingId != null) renderModalBody();
+}
 
 (function initModeToggle() {
-  const btns = document.querySelectorAll('#modeToggle .mode-opt');
-  function applyActive() {
-    btns.forEach(b => b.classList.toggle('active', b.dataset.mode === _scheduleMode));
-  }
-  btns.forEach(b => b.addEventListener('click', () => {
-    _scheduleMode = b.dataset.mode === 'summer' ? 'summer' : 'normal';
-    try { localStorage.setItem('sikchung_mode', _scheduleMode); } catch (_) {}
-    applyActive();
-  }));
-  applyActive();
+  document.querySelectorAll('#modeToggle .mode-opt').forEach(b =>
+    b.addEventListener('click', async () => {
+      const newMode = b.dataset.mode === 'summer' ? 'summer' : 'normal';
+      if (newMode === _scheduleMode) return;
+      try {
+        await API.putScheduleMode(newMode);   // 서버 저장 성공 후에만 반영
+      } catch (e) {
+        alert('모드 변경 실패: ' + e.message);
+        return;
+      }
+      _scheduleMode = newMode;
+      _applyModeUI();
+    }));
 })();
 
 // ============================================================
@@ -440,6 +452,13 @@ async function boot() {
   _apiMode = true;
   _currentUser = Permissions.getCurrentUser();
   showAuthBar(_currentUser);
+
+  // 서버 전역 일정 모드 로드 (리더/분대원 공통) — 실패 시 'normal' 유지, 부팅 계속
+  try {
+    const m = await API.getScheduleMode();
+    if (m && (m.mode === 'normal' || m.mode === 'summer')) _scheduleMode = m.mode;
+  } catch (e) { console.error('[boot] getScheduleMode:', e); }
+  _applyModeUI();
   $('logoutBtn').addEventListener('click', () => {
     Auth.logout();
   });
@@ -498,6 +517,7 @@ const AUDIT_ACTION_LABELS = {
   SCHEDULE_GENERATE: '일정 생성',
   SCHEDULE_SAVE:     '일정 저장',
   SCHEDULE_DELETE:   '일정 삭제',
+  SCHEDULE_MODE_SET: '모드 변경',
   MEMBER_UPDATE:     '멤버 수정',
   ME_UPDATE:         '본인 수정',
   USER_CREATE:       '사용자 생성',
@@ -518,6 +538,7 @@ function summarizeAuditDetail(detail) {
   if (!detail || typeof detail !== 'object') return '';
   const parts = [];
   if (detail.weekId)       parts.push('주차 ' + detail.weekId);
+  if (detail.mode)         parts.push(detail.mode === 'summer' ? '혹서기' : detail.mode === 'flex' ? '유연' : '일반');
   if (detail.username)     parts.push(detail.username);
   if (detail.role)         parts.push('역할 ' + detail.role);
   if (detail.newRole)      parts.push('→ ' + detail.newRole);
