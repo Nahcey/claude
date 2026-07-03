@@ -449,7 +449,7 @@ function recomputeStats() {
   if (!lastResult) return;
   let emptySlots = 0;
   for (const day of lastResult.schedule) {
-    emptySlots += SLOTS_PER_DAY - day.filter(Boolean).length;
+    emptySlots += day.length - day.filter(Boolean).length;  // 정원 = 슬롯 배열 길이
   }
   // 부담(load) unit 재계산 (평일 슬롯=1, 주말 슬롯=2)
   lastResult.assignCount = assignUnitsOf(lastResult.schedule);
@@ -477,32 +477,34 @@ const _swapEngine = createSwapEngine({
   },
 });
 
-// 한 (요일, 시간대) 셀 — 슬롯 인덱스가 -1 이면 "—" (해당 시간대 없음, 토/일 아침 칸)
+// 한 (요일, 시간대) 셀 — 슬롯 인덱스 -1 또는 정원 0(혹서기 평일 저녁)이면 "—"
+// 슬롯 정원 = schedule[slotIdx].length (모드별 가변; SLOTS_PER_DAY 미사용)
 function buildShiftCell(slotIdx, r) {
   const td = document.createElement('td');
-  if (slotIdx < 0) {
+  const cap = slotIdx < 0 ? 0 : r.schedule[slotIdx].length;
+  if (cap === 0) {
     td.className = 'cell-na';
     td.textContent = '—';
     return td;
   }
   const slot = r.schedule[slotIdx];
   const filled = slot.filter(Boolean).length;
-  if (filled === 0)            td.className = 'cell-empty';
-  else if (filled < SLOTS_PER_DAY) td.className = 'cell-partial';
-  else                         td.className = 'cell-full';
+  if (filled === 0)       td.className = 'cell-empty';
+  else if (filled < cap)  td.className = 'cell-partial';
+  else                    td.className = 'cell-full';
 
   const wrap = document.createElement('div');
   wrap.className = 'cell-chips';
 
   if (editMode) {
     // 편집 모드: 슬롯 position 별로 클릭 가능한 .slot-pos 요소 렌더
-    for (let pos = 0; pos < SLOTS_PER_DAY; pos++) {
+    for (let pos = 0; pos < cap; pos++) {
       wrap.appendChild(_swapEngine.buildSlotPos(slotIdx, pos));
     }
   } else {
     // 보기 모드: 기존 통합 렌더 (chip + 미배정 블록 + 가능 인원 목록)
     const filledList = [];
-    for (let s = 0; s < SLOTS_PER_DAY; s++) {
+    for (let s = 0; s < cap; s++) {
       const p = slot[s];
       if (!p) continue;
       filledList.push(p);
@@ -513,7 +515,7 @@ function buildShiftCell(slotIdx, r) {
       chip.textContent = p.name;
       wrap.appendChild(chip);
     }
-    const emptyCount = SLOTS_PER_DAY - filledList.length;
+    const emptyCount = cap - filledList.length;
     if (emptyCount > 0) {
       const block = document.createElement('span');
       block.className = 'unassigned-wrap';
@@ -555,6 +557,8 @@ function renderResult(r) {
   for (let i = 0; i < WEEKEND_SLOT_START; i += 2) {
     const m = r.schedule[i];
     const e = r.schedule[i+1];
+    // 정원 2×2 (일반 모드)에서만 column 정렬 수행 — 혹서기(아침 4/저녁 0)는 스킵
+    if (m.length !== 2 || e.length !== 2) continue;
     if (!e[0] && !e[1]) continue;
     const cur = alignScore(m, e);
     const swp = alignScore(m, [e[1], e[0]]);
@@ -660,7 +664,7 @@ function renderResult(r) {
   if (!editMode) $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function renderReadOnlySchedule(scheduleData) {
+function renderReadOnlySchedule(scheduleData, mode) {
   const tbody    = $('latestScheduleBody');
   const emptyMsg = $('latestScheduleEmpty');
   tbody.innerHTML = '';
@@ -672,7 +676,11 @@ function renderReadOnlySchedule(scheduleData) {
 
   const headRow = $('latestScheduleHead');
 
-  if (scheduleData.length >= FLEX_SLOTS_COUNT) {
+  // mode 미지정(구 레코드)은 추론. summer는 12슬롯 분기에서 자연 처리
+  // (빈 저녁 슬롯 → '—', 아침 4명은 그대로 나열).
+  if (!mode) mode = inferScheduleMode(scheduleData);
+
+  if (mode === 'flex' || scheduleData.length >= FLEX_SLOTS_COUNT) {
     // 21슬롯 flex 포맷: 7일 × 3교대 (아침/점심/저녁)
     if (headRow) headRow.innerHTML = '<th>요일</th><th>아침</th><th>점심</th><th>저녁</th>';
     const DAYS = ['월','화','수','목','금','토','일'];

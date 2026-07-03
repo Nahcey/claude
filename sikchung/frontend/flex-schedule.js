@@ -277,7 +277,7 @@ $('flexSaveScheduleBtn').addEventListener('click', async () => {
   btn.disabled = true; btn.textContent = '저장 중…';
   statusEl.textContent = '';
   try {
-    await API.postSchedule(weekId, scheduleData);
+    await API.postSchedule(weekId, scheduleData, 'flex');
     statusEl.textContent = `저장됨 (${weekId})`;
     statusEl.style.color = 'var(--green)';
     try { await refreshLatestSchedule(); } catch (_) {}

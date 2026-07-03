@@ -5,12 +5,28 @@
 let _currentUser = null; // Permissions.getCurrentUser() 결과 (로그인 시)
 let _apiMode = false;    // true: 서버 연동 모드
 
+// 일정 생성 모드 ('normal' | 'summer') — localStorage에 기억, 부팅 시 복원
+let _scheduleMode = (localStorage.getItem('sikchung_mode') === 'summer') ? 'summer' : 'normal';
+
+(function initModeToggle() {
+  const btns = document.querySelectorAll('#modeToggle .mode-opt');
+  function applyActive() {
+    btns.forEach(b => b.classList.toggle('active', b.dataset.mode === _scheduleMode));
+  }
+  btns.forEach(b => b.addEventListener('click', () => {
+    _scheduleMode = b.dataset.mode === 'summer' ? 'summer' : 'normal';
+    try { localStorage.setItem('sikchung_mode', _scheduleMode); } catch (_) {}
+    applyActive();
+  }));
+  applyActive();
+})();
+
 // ============================================================
 // 일정 생성 — API 서버 연동 (POST /schedule/generate)
 // ============================================================
 async function generate() {
   const eligible = people.filter(p => !p.excluded);
-  const raw = await API.generateSchedule(eligible);
+  const raw = await API.generateSchedule(eligible, _scheduleMode);
 
   // 서버 응답은 id 기반 → 로컬 people 배열로 person 객체 복원
   const byId = new Map(people.map(p => [p.id, p]));
@@ -38,6 +54,7 @@ async function generate() {
     assignCount,
     active:      eligible,
     optimal:     raw.optimal,
+    mode:        raw.mode || _scheduleMode,
   };
   renderResult(lastResult);
 
@@ -226,7 +243,7 @@ $('resetBtn').addEventListener('click', () => {
 // 헤더 우상단 "updated: YYYY-MM-DD" — 파일이 변경될 때마다 아래 상수를
 // 그 시점 한국 표준시(KST) 날짜로 직접 수정해서 유지한다.
 // ============================================================
-const UPDATED_AT = '2026-06-06'; // KST, HTML 파일 변경 시 함께 갱신
+const UPDATED_AT = '2026-07-02'; // KST, HTML 파일 변경 시 함께 갱신
 (function showUpdated() {
   $('updatedLabel').textContent = `updated: ${UPDATED_AT}`;
 })();
@@ -278,7 +295,7 @@ async function refreshLatestSchedule() {
   if (latest && latest.weekId) {
     $('latestWeekId').textContent = '(' + latest.weekId + ')'
       + (latest.generatedAt ? ' · 생성 ' + fmtKST(latest.generatedAt) : '');
-    renderReadOnlySchedule(latest.scheduleData);
+    renderReadOnlySchedule(latest.scheduleData, latest.mode);
   }
 }
 
@@ -296,7 +313,7 @@ $('saveScheduleBtn').addEventListener('click', async () => {
   btn.disabled = true; btn.textContent = '저장 중…';
   statusEl.textContent = '';
   try {
-    await API.postSchedule(weekId, scheduleData);
+    await API.postSchedule(weekId, scheduleData, (lastResult && lastResult.mode) || 'normal');
     statusEl.textContent = `저장됨 (${weekId})`;
     statusEl.style.color = 'var(--green)';
     // 저장 후 최신 일정 카드 갱신
@@ -335,10 +352,17 @@ $('editLatestBtn').addEventListener('click', async () => {
         return { id: orphanId--, name: entry.name, restricted: Array(SLOTS_COUNT).fill(false), double: false, priority: 0, excluded: false };
       })
     );
-    while (schedule.length < SLOTS_COUNT) schedule.push([null, null]);
+    // mode 기반 패딩: 슬롯 수를 12로, 각 슬롯 길이를 해당 모드 정원으로 맞춤
+    // (summer 저장본은 평일 아침 4칸·저녁 0칸을 그대로 보존)
+    const mode = latest.mode || inferScheduleMode(latest.scheduleData);
+    const capVec = MODE_CAPACITY[mode] || MODE_CAPACITY.normal;
+    while (schedule.length < SLOTS_COUNT) schedule.push([]);
+    for (let s = 0; s < SLOTS_COUNT; s++) {
+      while (schedule[s].length < capVec[s]) schedule[s].push(null);
+    }
 
     const assignCount = assignUnitsOf(schedule);
-    lastResult = { schedule, skipped: [], failed: [], fullDays: 0, emptySlots: 0, assignCount, active: people };
+    lastResult = { schedule, skipped: [], failed: [], fullDays: 0, emptySlots: 0, assignCount, active: people, mode };
 
     editMode = false; selectedSlot = null;
     $('editBtn').textContent = '편집';
