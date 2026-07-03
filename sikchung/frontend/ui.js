@@ -42,7 +42,9 @@ function renderPeople() {
       meta.appendChild(b);
     }
     // 우선순위 P 라벨은 카드에 노출하지 않음 (모달에서만 편집)
-    const resCount = p.restricted.filter(Boolean).length;
+    // 제한 배지: 현재 모드에서 정원 > 0 인 슬롯만 카운트 (혹서기 평일 저녁 제외)
+    const capVec = MODE_CAPACITY[_scheduleMode] || MODE_CAPACITY.normal;
+    const resCount = p.restricted.filter((v, s) => v && capVec[s] > 0).length;
     if (resCount > 0) {
       const b = document.createElement('span');
       b.className = 'pc-mini res';
@@ -198,23 +200,39 @@ function appendWeekdayRow(dayIdx) {
   modalDays.appendChild(allBtn);
 }
 
+// 혹서기용 평일 행 — '아침' 토글 1개만.
+// 저녁 인덱스(1,3,5,7,9)는 읽지도 쓰지도 않음 (일반 모드 복귀 시 기존 값 보존).
+function appendWeekdayRowSummer(dayIdx) {
+  const morningIdx = dayIdx * 2;
+  const label = document.createElement('div');
+  label.className = 'day-label-cell';
+  label.textContent = TIME_SLOTS[morningIdx].day;
+  modalDays.appendChild(label);
+  modalDays.appendChild(createSlotToggle(morningIdx, '아침', false));
+}
+
 // 모달 내부 폼을 현재 인원의 실제 값으로 다시 그림 (초기화/열기에서 공통 사용)
 function renderModalBody() {
   const p = editingPerson();
   if (!p) return;
 
-  // 그리드: [요일 라벨 | 아침 | 저녁 | 전체]
+  // 그리드: normal [요일|아침|저녁|전체] 4열 / summer(혹서기) [요일|아침] 2열
+  const summer = _scheduleMode === 'summer';
+  modalDays.classList.toggle('summer', summer);
   modalDays.innerHTML = '';
-  // 헤더 행 — 라벨 자리 + 3개 헤더
+  // 헤더 행 — 라벨 자리 + 헤더
   modalDays.appendChild(document.createElement('div'));
-  for (const h of ['아침', '저녁', '전체']) {
+  for (const h of summer ? ['아침'] : ['아침', '저녁', '전체']) {
     const cell = document.createElement('div');
     cell.className = 'grid-header';
     cell.textContent = h;
     modalDays.appendChild(cell);
   }
   // 월~금 (5행)
-  for (let i = 0; i < 5; i++) appendWeekdayRow(i);
+  for (let i = 0; i < 5; i++) {
+    if (summer) appendWeekdayRowSummer(i);
+    else appendWeekdayRow(i);
+  }
   // 토·일 (각 행에 단일 '저녁' 버튼이 전체 폭)
   for (let i = WEEKEND_SLOT_START; i < SLOTS_COUNT; i++) {
     const label = document.createElement('div');
