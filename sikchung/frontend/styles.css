@@ -119,23 +119,17 @@ table.people input[type="number"] {
 /* Generate button row */
 .actions-row { display: flex; gap: 10px; flex-wrap: wrap; }
 
-/* 일정 모드 세그먼트 토글 (일반/혹서기) */
-.mode-toggle {
-  display: inline-flex; align-items: stretch;
-  border: 1px solid var(--border); border-radius: 10px;
-  overflow: hidden; background: var(--bg);
+/* 일정 모드 읽기 전용 배지 — 변경은 admin CLI 전용 */
+.mode-badge {
+  display: inline-flex; align-items: center;
+  padding: 10px 16px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg);
+  font-size: 14px; font-weight: 600; color: var(--muted);
+  white-space: nowrap;
 }
-.mode-toggle .mode-opt {
-  border: none; background: transparent; cursor: pointer;
-  padding: 10px 16px; font-family: inherit; font-size: 14px;
-  font-weight: 500; color: var(--muted); white-space: nowrap;
+.mode-badge.summer {
+  background: #FFF7ED; border-color: #FDBA74; color: #C2410C;  /* 혹서기 강조 (주황) */
 }
-.mode-toggle .mode-opt.active {
-  background: var(--primary); color: #fff; font-weight: 600;
-}
-/* admin 외에는 변경 불가 — 현재 모드 표시만 (active는 선명 유지) */
-.mode-toggle .mode-opt:disabled { cursor: default; opacity: 0.55; }
-.mode-toggle .mode-opt.active:disabled { opacity: 1; }
 
 /* Result table */
 table.schedule {

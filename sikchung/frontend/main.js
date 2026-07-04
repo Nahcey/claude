@@ -5,43 +5,36 @@
 let _currentUser = null; // Permissions.getCurrentUser() 결과 (로그인 시)
 let _apiMode = false;    // true: 서버 연동 모드
 
-// 일정 생성 모드 ('normal' | 'summer') — 서버 전역 설정 (GET/PUT /schedule/mode).
-// 분대원 각자 기기의 제한 에디터가 같은 모드를 따라야 하므로 로컬 저장 안 함.
+// 일정 생성 모드 ('normal' | 'summer') — 서버 전역 설정 (GET /schedule/mode, 읽기 전용).
+// 변경은 admin CLI(scripts/set-schedule-mode.sh) 전용 — 웹에는 변경 수단 없음.
 let _scheduleMode = 'normal';
 
-// 모드 변경 시 UI 일괄 갱신: 토글 활성 + 인원 카드(제한 배지) + 열려 있는 인원 모달.
-// 변경 권한은 admin 전용 — 비admin은 현재 모드 표시만 (버튼 비활성).
+// 모드 반영 시 UI 일괄 갱신: 배지 + 인원 카드(제한 배지) + 열려 있는 인원 모달
 function _applyModeUI() {
-  const isAdmin = !!(_currentUser && _currentUser.isAdmin);
-  document.querySelectorAll('#modeToggle .mode-opt').forEach(b => {
-    b.classList.toggle('active', b.dataset.mode === _scheduleMode);
-    b.disabled = !isAdmin;
-  });
+  const badge = $('modeBadge');
+  if (badge) {
+    const summer = _scheduleMode === 'summer';
+    badge.textContent = summer ? '혹서기 모드' : '일반 모드';
+    badge.classList.toggle('summer', summer);
+  }
   renderPeople();
   if (editingId != null) renderModalBody();
 }
-
-(function initModeToggle() {
-  document.querySelectorAll('#modeToggle .mode-opt').forEach(b =>
-    b.addEventListener('click', async () => {
-      if (!_currentUser || !_currentUser.isAdmin) return;   // admin 전용 (서버도 403)
-      const newMode = b.dataset.mode === 'summer' ? 'summer' : 'normal';
-      if (newMode === _scheduleMode) return;
-      try {
-        await API.putScheduleMode(newMode);   // 서버 저장 성공 후에만 반영
-      } catch (e) {
-        alert('모드 변경 실패: ' + e.message);
-        return;
-      }
-      _scheduleMode = newMode;
-      _applyModeUI();
-    }));
-})();
 
 // ============================================================
 // 일정 생성 — API 서버 연동 (POST /schedule/generate)
 // ============================================================
 async function generate() {
+  // 생성 직전 모드 재조회 — admin이 CLI로 바꾼 뒤 새로고침 안 한 탭에서
+  // 낡은 모드로 생성되는 것을 방지. 실패 시 캐시된 모드로 진행.
+  try {
+    const m = await API.getScheduleMode();
+    if (m && (m.mode === 'normal' || m.mode === 'summer') && m.mode !== _scheduleMode) {
+      _scheduleMode = m.mode;
+      _applyModeUI();
+    }
+  } catch (e) { console.error('[generate] getScheduleMode:', e); }
+
   const eligible = people.filter(p => !p.excluded);
   const raw = await API.generateSchedule(eligible, _scheduleMode);
 
