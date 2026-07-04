@@ -133,6 +133,9 @@ table.people input[type="number"] {
 .mode-toggle .mode-opt.active {
   background: var(--primary); color: #fff; font-weight: 600;
 }
+/* admin 외에는 변경 불가 — 현재 모드 표시만 (active는 선명 유지) */
+.mode-toggle .mode-opt:disabled { cursor: default; opacity: 0.55; }
+.mode-toggle .mode-opt.active:disabled { opacity: 1; }
 
 /* Result table */
 table.schedule {
