@@ -8,7 +8,7 @@
 const { authorize }                                          = require('../lib/auth');
 const {
   putSchedule, getLatestSchedule, deleteLatestSchedule,
-  getScheduleMode, putScheduleMode,
+  getScheduleMode,
 } = require('../lib/db');
 const { ok, badRequest, unauthorized, forbidden, serverError } = require('../lib/response');
 const { writeAudit }                                         = require('../lib/audit');
@@ -20,35 +20,15 @@ exports.handler = async (event) => {
     const method = event.requestContext.http.method;
     const path   = event.rawPath || event.requestContext.http.path || '';
 
-    // ── /schedule/mode — 전역 일정 모드 (path 우선 분기, latest 로직과 분리) ──
+    // ── GET /schedule/mode — 전역 일정 모드 조회 (path 우선 분기) ─────────────
+    // 변경(쓰기)은 admin CLI 전용(scripts/set-schedule-mode.sh) — 웹 API 없음.
     if (path.endsWith('/schedule/mode')) {
-      // GET: member 이상 (분대원 제한 에디터가 모드를 따라야 함)
       if (method === 'GET') {
         const auth = authorize(event, 'member');
         if (!auth.ok) {
           return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
         }
         return ok({ mode: await getScheduleMode() });
-      }
-      // PUT: admin 전용 (모드는 전 부대 공통 설정이라 리더도 변경 불가)
-      if (method === 'PUT') {
-        const auth = authorize(event, 'admin');
-        if (!auth.ok) {
-          return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
-        }
-        let body;
-        try {
-          body = JSON.parse(event.body || '{}');
-        } catch {
-          return badRequest('Invalid JSON body');
-        }
-        const { mode } = body;
-        if (!['normal', 'summer'].includes(mode)) {
-          return badRequest("mode must be 'normal' or 'summer'");
-        }
-        await putScheduleMode(mode);
-        writeAudit(event, auth, 'SCHEDULE_MODE_SET', { mode });   // fire-and-forget
-        return ok({ mode });
       }
       return badRequest('Method not allowed');
     }

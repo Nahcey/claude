@@ -136,14 +136,7 @@ async function getScheduleMode() {
   return Item?.mode ?? 'normal';
 }
 
-/** 전역 일정 모드 저장 (호출 전 화이트리스트 검증은 핸들러 책임). */
-async function putScheduleMode(mode) {
-  await client.send(new PutCommand({
-    TableName: TABLE_NAME,
-    Item: { PK: 'SETTINGS', SK: 'SCHEDULE_MODE', mode, updatedAt: new Date().toISOString() },
-  }));
-  return mode;
-}
+// 모드 변경(쓰기)은 admin CLI 전용 — scripts/set-schedule-mode.sh 가 직접 put-item.
 
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
 
@@ -193,7 +186,6 @@ module.exports = {
   deleteMember,
   listAuditLogs,
   getScheduleMode,
-  putScheduleMode,
   putSchedule,
   getLatestSchedule,
   deleteLatestSchedule,

@@ -251,19 +251,13 @@ Resources:
             ApiId: !Ref HttpApi
             Method: GET
             Path: /schedule/mode
-        PutScheduleMode:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Method: PUT
-            Path: /schedule/mode
       Policies:
         - Statement:
             - Effect: Allow
               Action:
                 - dynamodb:Query      # getLatestSchedule (ScanIndexForward: false)
                 - dynamodb:GetItem    # getScheduleMode (SETTINGS/SCHEDULE_MODE)
-                - dynamodb:PutItem    # putSchedule, putScheduleMode
+                - dynamodb:PutItem    # putSchedule, writeAudit
                 - dynamodb:DeleteItem # deleteLatestSchedule
               Resource: !GetAtt SikchungDataTable.Arn
 
