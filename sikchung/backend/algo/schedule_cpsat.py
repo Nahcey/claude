@@ -31,6 +31,17 @@ MODE_CAPACITY = {
 _CP_STATUS = {OPTIMAL: 'OPTIMAL', FEASIBLE: 'FEASIBLE'}
 
 
+def _person_cap(person, mode):
+    """인당 배정 상한 (unit: 평일 1 / 주말 2).
+
+    double: normal 4 unit(주 2회 개념), summer 3 unit(주 3회 —
+    아침 3회 또는 주말 1+아침 1). non-double은 두 모드 모두 2.
+    """
+    if person.get('double'):
+        return 3 if mode == 'summer' else 4
+    return 2
+
+
 def _pair_preference(a, b):
     a_r = bool(a.get('rookie'))
     b_r = bool(b.get('rookie'))
@@ -101,12 +112,11 @@ def generate_schedule(eligible, mode='normal'):
     # ── Hard constraint: per-person cap ──────────────────────────────────────
     # 평일 슬롯 각 1비용, 주말 슬롯 각 2비용 → 총 비용 ≤ cap.
     # sum(all_slots) + sum(weekend_slots) = raw_wd + 2×wknd ≤ cap.
-    # non-double cap=2, double cap=4.
+    # non-double cap=2. double cap: normal 4 / summer 3 (_person_cap).
     for i, person in enumerate(active):
-        person_cap = 4 if person.get('double') else 2
         model.Add(
             sum(x[i][s] for s in range(SLOTS_COUNT)) +
-            sum(x[i][s] for s in WEEKEND_SLOTS) <= person_cap
+            sum(x[i][s] for s in WEEKEND_SLOTS) <= _person_cap(person, mode)
         )
 
     # ── Derived variables ─────────────────────────────────────────────────────
@@ -365,12 +375,11 @@ def check_expected(eligible, expected_assignment, mode='normal'):
     for s in range(SLOTS_COUNT):
         model.Add(sum(x[i][s] for i in range(m)) <= cap[s])
 
-    # hard: per-person cap
+    # hard: per-person cap (non-double 2 / double: normal 4, summer 3)
     for i, person in enumerate(active):
-        person_cap = 4 if person.get('double') else 2
         model.Add(
             sum(x[i][s] for s in range(SLOTS_COUNT)) +
-            sum(x[i][s] for s in WEEKEND_SLOTS) <= person_cap
+            sum(x[i][s] for s in WEEKEND_SLOTS) <= _person_cap(person, mode)
         )
 
     # fix expected assignment: x[i][s] == 1 if assigned, 0 otherwise

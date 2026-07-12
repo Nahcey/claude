@@ -18,6 +18,7 @@ function _applyModeUI() {
     badge.classList.toggle('summer', summer);
   }
   renderPeople();
+  updateStatus();   // 공급량 경고가 모드별 double cap 기준으로 재계산되도록
   if (editingId != null) renderModalBody();
 }
 
@@ -167,7 +168,7 @@ $('modalExcluded').addEventListener('click', () => {
 $('modalReset').addEventListener('click', () => {
   const p = editingPerson();
   if (!p) return;
-  if (!confirm('이 인원의 설정(제한 시간 슬롯 · 주 2회 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
+  if (!confirm('이 인원의 설정(제한 시간 슬롯 · 추가 배정 · 신병)을 모두 초기화합니다. 계속하시겠습니까?')) return;
   p.restricted = defaultRestrictedFor(p.name); // 12칸 배열
   p.double = false; // index2 디폴트: 주 2회 OFF
   p.priority = 0;

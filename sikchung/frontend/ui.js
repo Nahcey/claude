@@ -38,7 +38,7 @@ function renderPeople() {
     if (p.double) {
       const b = document.createElement('span');
       b.className = 'pc-mini dbl';
-      b.textContent = '2회';
+      b.textContent = _scheduleMode === 'summer' ? '3회' : '2회';
       meta.appendChild(b);
     }
     // 우선순위 P 라벨은 카드에 노출하지 않음 (모달에서만 편집)
@@ -242,6 +242,10 @@ function renderModalBody() {
     modalDays.appendChild(createSlotToggle(i, '저녁', true));
   }
 
+  // double 라벨 — 모드별 표기 (normal 주 2회 / summer 주 3회, 필드는 double 그대로)
+  const dblLabel = $('modalDoubleLabel');
+  if (dblLabel) dblLabel.textContent = summer ? '주 3회 배정 가능' : '주 2회 배정 가능';
+
   // 스위치 및 입력 동기화
   modalDouble.classList.toggle('on', !!p.double);
   modalRookie.classList.toggle('on', !!p.rookie);
@@ -258,9 +262,10 @@ function closeEditor() {
 // 상태 배너 (Red / Yellow / Green / Blue info)
 // ============================================================
 function maxCapacity() {
-  // index2 정책: 인원당 총 cap = (p.double ? 4 : 2). 주말 슬롯은 한 사람당 1회 이내.
-  // 단순 합산만으로도 상한이 잘 맞음 (주말 4 + 평일 20 = 24).
-  const totalCap = people.filter(p => !p.excluded).reduce((s, p) => s + (p.double ? 4 : 2), 0);
+  // 인당 총 cap: non-double 2 / double은 모드별 (normal 4, summer 3 — 백엔드 _person_cap과 동일).
+  // 단순 합산만으로도 상한이 잘 맞음 (normal: 주말 4 + 평일 20 = 24).
+  const dblCap = _scheduleMode === 'summer' ? 3 : 4;
+  const totalCap = people.filter(p => !p.excluded).reduce((s, p) => s + (p.double ? dblCap : 2), 0);
   return Math.min(TOTAL_SLOTS, totalCap);
 }
 function activeCount() { return people.filter(p => !p.excluded).length; }
